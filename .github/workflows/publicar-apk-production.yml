@@ -25,10 +25,11 @@ jobs:
         id: read
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="$(
-            gh release list --limit 50 --json tagName,isPrerelease,createdAt \
+            gh release list --repo "$GH_REPO" --limit 50 --json tagName,isPrerelease,createdAt \
               --jq '[.[] | select(.isPrerelease and (.tagName | startswith("apk-dev-")))] | sort_by(.createdAt) | reverse | .[0].tagName // empty'
           )"
           if [ -z "$tag" ]; then
@@ -36,12 +37,12 @@ jobs:
             exit 1
           fi
 
-          notes="$(gh release view "$tag" --json body --jq .body)"
+          notes="$(gh release view "$tag" --repo "$GH_REPO" --json body --jq .body)"
           version="$(printf '%s\n' "$notes" | sed -n 's/^APP_VERSION=//p' | head -n 1)"
 
           if [ -z "$version" ]; then
             tmp="$(mktemp -d)"
-            if gh release download "$tag" --pattern version.txt --dir "$tmp" 2>/dev/null; then
+            if gh release download "$tag" --repo "$GH_REPO" --pattern version.txt --dir "$tmp" 2>/dev/null; then
               version="$(tr -d '[:space:]' < "$tmp/version.txt")"
             fi
           fi
