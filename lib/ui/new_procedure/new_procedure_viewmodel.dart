@@ -655,83 +655,77 @@ class NewProcedureViewModel extends ChangeNotifier {
 
   List<Procedure> save() {
     final current = modality!;
-    final grouped = subtype == ProcedureSubtype.ponte ||
-        subtype == ProcedureSubtype.protocolo ||
-        current == Modality.enxerto;
     final recordSinus = current == Modality.enxerto || (isImplant && associatedGraft);
-    final groups = grouped ? [ordered] : pillars.map((tooth) => [tooth]).toList();
-    final created = <Procedure>[];
-    for (final teeth in groups) {
-      created.add(
-        Procedure(
-          id: repository.allocateId('pro'),
-          patientId: patientId,
-          modality: current,
-          subtype: subtype,
-          associatedGraft: isImplant && associatedGraft,
-          sinusLift: recordSinus && sinusLift,
-          sinusLiftTechnique: recordSinus && sinusLift ? sinusLiftTechnique : null,
-          sinusLiftNote: recordSinus && sinusLift ? sinusLiftNote.trim() : '',
-          linkedImplantIds: isProsthesis ? linkedImplantIds.toList() : const [],
-          linkedProcedureIds: const [],
-          arch: subtype == ProcedureSubtype.protocolo ? arch : null,
-          surgeryDate: surgery,
-          statusLabel: switch (current) {
-            Modality.enxerto => graftStatusLabel(GraftStatus.realizado),
-            Modality.protese => implantStatusLabel(ImplantStatus.protese),
-            Modality.implante => implantStatusLabel(ImplantStatus.instalado),
-          },
-          sites: [
-            for (final tooth in teeth)
-              ToothSite(
-                fdi: tooth,
-                role: roles[tooth] ?? ToothRole.pilar,
-                piece: current != Modality.implante || roles[tooth] == ToothRole.pontico
-                    ? null
-                    : ImplantPiece(
-                        manufacturer: drafts[tooth]?.manufacturer ?? '',
-                        model: drafts[tooth]?.model ?? '',
-                        reference: drafts[tooth]?.reference ?? '',
-                        size: drafts[tooth]?.size ?? '',
-                        lot: drafts[tooth]?.lot ?? '',
-                        anvisa: drafts[tooth]?.anvisa ?? '',
-                        manufacturedOn: drafts[tooth]?.manufacturedOn,
-                        expiresOn: drafts[tooth]?.expiresOn,
-                      ),
-                grafts: _graftsFor(tooth),
-              ),
-          ],
-          followUps: chronologicalFollowUps([
-            if (schedulesSurgicalReturns)
-              FollowUp(
-                id: repository.allocateId('ret'),
-                date: suture,
-                reason: ReturnReason.sutura,
-                status: ReturnStatus.agendado,
-                reminderEnabled: false,
-              ),
-            for (final extra in extraReturns)
-              FollowUp(
-                id: repository.allocateId('ret'),
-                date: extra.date,
-                reason: extra.reason,
-                status: ReturnStatus.agendado,
-                reminderEnabled: extra.reminderEnabled,
-                reminderDaysBefore: extra.reminderDaysBefore,
-              ),
-            if (schedulesSurgicalReturns)
-              FollowUp(
-                id: repository.allocateId('ret'),
-                date: longReturn,
-                reason: longReason,
-                status: ReturnStatus.agendado,
-                reminderEnabled: longReminder,
-                reminderDaysBefore: longLead,
-              ),
-          ]),
-        ),
-      );
-    }
+    final teeth = ordered;
+    final created = [
+      Procedure(
+        id: repository.allocateId('pro'),
+        patientId: patientId,
+        modality: current,
+        subtype: subtype,
+        associatedGraft: isImplant && associatedGraft,
+        sinusLift: recordSinus && sinusLift,
+        sinusLiftTechnique: recordSinus && sinusLift ? sinusLiftTechnique : null,
+        sinusLiftNote: recordSinus && sinusLift ? sinusLiftNote.trim() : '',
+        linkedImplantIds: isProsthesis ? linkedImplantIds.toList() : const [],
+        linkedProcedureIds: const [],
+        arch: subtype == ProcedureSubtype.protocolo ? arch : null,
+        surgeryDate: surgery,
+        statusLabel: switch (current) {
+          Modality.enxerto => graftStatusLabel(GraftStatus.realizado),
+          Modality.protese => implantStatusLabel(ImplantStatus.protese),
+          Modality.implante => implantStatusLabel(ImplantStatus.instalado),
+        },
+        sites: [
+          for (final tooth in teeth)
+            ToothSite(
+              fdi: tooth,
+              role: roles[tooth] ?? ToothRole.pilar,
+              piece: current != Modality.implante || roles[tooth] == ToothRole.pontico
+                  ? null
+                  : ImplantPiece(
+                      manufacturer: drafts[tooth]?.manufacturer ?? '',
+                      model: drafts[tooth]?.model ?? '',
+                      reference: drafts[tooth]?.reference ?? '',
+                      size: drafts[tooth]?.size ?? '',
+                      lot: drafts[tooth]?.lot ?? '',
+                      anvisa: drafts[tooth]?.anvisa ?? '',
+                      manufacturedOn: drafts[tooth]?.manufacturedOn,
+                      expiresOn: drafts[tooth]?.expiresOn,
+                    ),
+              grafts: _graftsFor(tooth),
+            ),
+        ],
+        followUps: chronologicalFollowUps([
+          if (schedulesSurgicalReturns)
+            FollowUp(
+              id: repository.allocateId('ret'),
+              date: suture,
+              reason: ReturnReason.sutura,
+              status: ReturnStatus.agendado,
+              reminderEnabled: false,
+            ),
+          for (final extra in extraReturns)
+            FollowUp(
+              id: repository.allocateId('ret'),
+              date: extra.date,
+              reason: extra.reason,
+              status: ReturnStatus.agendado,
+              reminderEnabled: extra.reminderEnabled,
+              reminderDaysBefore: extra.reminderDaysBefore,
+            ),
+          if (schedulesSurgicalReturns)
+            FollowUp(
+              id: repository.allocateId('ret'),
+              date: longReturn,
+              reason: longReason,
+              status: ReturnStatus.agendado,
+              reminderEnabled: longReminder,
+              reminderDaysBefore: longLead,
+            ),
+        ]),
+      ),
+    ];
     repository.saveProcedures(created);
     return created;
   }
