@@ -82,7 +82,11 @@ class NativeWorkOsAuth implements WorkOsAuth {
         name: sanitizePersonName(result?['name']),
         accessToken: accessToken,
       );
-    } on PlatformException {
+    } on PlatformException catch (error) {
+      // Falha de rede: mantém sessão local. Sessão inválida volta null (sign-out no restore).
+      if (error.code == 'network') {
+        throw WorkOsAuthException(error.message ?? 'Sem conexão para renovar a sessão.');
+      }
       return null;
     } on MissingPluginException {
       return null;

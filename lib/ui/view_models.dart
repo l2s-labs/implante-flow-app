@@ -128,7 +128,12 @@ class SessionViewModel extends RepositoryViewModel {
     if (!snapshot.signedIn || workOsClientId.isEmpty) return;
     try {
       final identity = await auth.currentIdentity(clientId: workOsClientId);
-      if (identity == null) return;
+      if (identity == null) {
+        // Refresh token ausente/inválido: sem access token a API nunca é chamada.
+        // Força login de novo (AuthKit na tela /login) em vez de sessão fantasma.
+        repository.signOut();
+        return;
+      }
       repository.signIn(
         name: identity.name,
         email: identity.email,
@@ -136,7 +141,7 @@ class SessionViewModel extends RepositoryViewModel {
       );
       await repository.refresh();
     } on WorkOsAuthException {
-      // The stored profile stays until the next successful WorkOS refresh.
+      // Rede/indisponibilidade: mantém o prontuário local até o próximo refresh.
     }
   }
 

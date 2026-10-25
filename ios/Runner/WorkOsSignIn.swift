@@ -82,8 +82,15 @@ final class WorkOsSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
             "accessToken": identity.accessToken,
           ])
         }
-      } catch {
+      } catch let error as URLError {
         await MainActor.run {
+          result(FlutterError(code: "network", message: "Sem conexão para renovar a sessão.", details: error.localizedDescription))
+        }
+      } catch {
+        Keychain.delete(key: "refresh_token")
+        Keychain.delete(key: "session_id")
+        await MainActor.run {
+          self.accessToken = nil
           result(nil)
         }
       }

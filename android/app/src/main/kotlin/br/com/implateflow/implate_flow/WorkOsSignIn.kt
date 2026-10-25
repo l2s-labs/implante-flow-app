@@ -161,6 +161,13 @@ class WorkOsSignIn(
                     Log.e(TAG, "Could not store WorkOS session", error)
                 }
                 result.success(identity.toMap())
+            } catch (error: java.io.IOException) {
+                Log.w(TAG, "Could not refresh the WorkOS profile (network)", error)
+                result.error("network", "Sem conexão para renovar a sessão.", null)
+            } catch (error: WorkOsExchangeException) {
+                Log.w(TAG, "Could not refresh the WorkOS profile", error)
+                clearSession()
+                result.success(null)
             } catch (error: Exception) {
                 Log.w(TAG, "Could not refresh the WorkOS profile", error)
                 result.success(null)
