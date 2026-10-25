@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_viewmodel.dart';
 
 void main() {
-  test('prótese salva nos três subtipos sem vínculo e com preexistente', () {
+  test('prótese salva nos três subtipos sem vínculo e com preexistente', () async {
     final repository = MockClinicRepository(MockClinicService());
     final patient = repository.current.patients.firstWhere((item) => item.name == 'Maria Souza');
 
@@ -26,7 +26,7 @@ void main() {
       } else {
         viewModel.toggleTooth(14);
       }
-      viewModel.openSummary();
+      await viewModel.openSummary();
       expect(viewModel.saveError, isNull);
       final created = viewModel.save().single;
       expect(created.linkedImplantIds, isEmpty);

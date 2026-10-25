@@ -4,16 +4,11 @@ import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../services/api_feedback.dart';
-import '../services/mock_clinic_service.dart';
 import 'clinic_repository.dart';
 
-class MockClinicRepository implements ClinicRepository {
-  MockClinicRepository(
-    MockClinicService service, {
-    Future<void> Function(ClinicSnapshot snapshot)? persist,
-  }) : this.fromSnapshot(service.load(), persist: persist);
-
-  MockClinicRepository.fromSnapshot(
+/// Estado mutável do prontuário em memória (cache local + persistência opcional).
+class ClinicStateStore implements ClinicRepository {
+  ClinicStateStore.fromSnapshot(
     this._snapshot, {
     this._persist,
     this.ids,
@@ -61,6 +56,9 @@ class MockClinicRepository implements ClinicRepository {
 
   @override
   Future<void> refresh() async {}
+
+  @override
+  Future<void> refreshCatalog() async {}
 
   @override
   void applyOverdueNotices() {

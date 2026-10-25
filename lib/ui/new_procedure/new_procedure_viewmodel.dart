@@ -258,6 +258,7 @@ class NewProcedureViewModel extends ChangeNotifier {
   late int longLead;
   final List<ExtraReturnDraft> extraReturns = [];
   int _extraSeq = 0;
+  bool catalogRefreshing = false;
 
   List<int> get ordered => selected.toList()..sort(compareTeeth);
 
@@ -482,7 +483,16 @@ class NewProcedureViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void openSummary() {
+  Future<void> openSummary() async {
+    if (catalogRefreshing) return;
+    catalogRefreshing = true;
+    notifyListeners();
+    try {
+      // Lista de fabricantes/modelos/tamanhos (e enxertos) atualizada antes do resumo.
+      await repository.refreshCatalog();
+    } finally {
+      catalogRefreshing = false;
+    }
     for (final tooth in pillars) {
       drafts.putIfAbsent(tooth, PieceDraft.new);
     }

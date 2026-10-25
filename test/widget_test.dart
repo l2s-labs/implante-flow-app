@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:implate_flow/data/repositories/clinic_repository.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import 'helpers/mock_clinic_repository.dart';
+import 'helpers/mock_clinic_service.dart';
 import 'package:implate_flow/data/services/workos_auth.dart';
 import 'package:implate_flow/main.dart';
 import 'package:implate_flow/ui/view_models.dart';

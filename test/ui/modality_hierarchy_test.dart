@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_repository.dart';
 import 'package:implate_flow/data/services/clinic_snapshot_codec.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_screen.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_viewmodel.dart';
@@ -37,7 +37,7 @@ void main() {
     await tester.tap(find.text('Unitário'));
     await tester.pumpAndSettle();
     viewModel.toggleTooth(11);
-    viewModel.openSummary();
+    await viewModel.openSummary();
     await tester.pumpAndSettle();
 
     expect(find.text('Foi realizado enxerto?'), findsOneWidget);
@@ -72,7 +72,7 @@ void main() {
     expect(stored.sites.single.grafts.single.donorSite, 'Ramo');
   });
 
-  test('prótese vincula implante existente e não cria sutura', () {
+  test('prótese vincula implante existente e não cria sutura', () async {
     final repository = MockClinicRepository(MockClinicService());
     final patient = repository.current.patients.firstWhere((item) => item.name == 'João Lima');
     final inventory = repository.current.implantsFor(patient.id, activeOnly: true);
@@ -82,7 +82,7 @@ void main() {
     viewModel.toggleTooth(14);
     viewModel.toggleTooth(15);
     viewModel.toggleTooth(16);
-    viewModel.openSummary();
+    await viewModel.openSummary();
     expect(viewModel.saveError, isNull);
     expect(viewModel.linkedImplantsForTooth(14), isEmpty);
 

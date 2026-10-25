@@ -1,6 +1,7 @@
-import '../../domain/clinic_snapshot.dart';
-import '../../domain/models.dart';
+import 'package:implate_flow/domain/clinic_snapshot.dart';
+import 'package:implate_flow/domain/models.dart';
 
+/// Dados de demonstração usados apenas pela suíte de testes.
 class MockClinicService {
   ClinicSnapshot load() => buildDemoSnapshot();
 }

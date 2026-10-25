@@ -176,6 +176,16 @@ class _MouthStep extends StatelessWidget {
                 ],
               ),
               if (viewModel.selected.isEmpty) const AppEmptyHint('Nenhum dente selecionado.'),
+              if (viewModel.catalogRefreshing) ...[
+                const SizedBox(height: 16),
+                const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -184,7 +194,7 @@ class _MouthStep extends StatelessWidget {
           primaryLabel: 'Continuar',
           onSecondary: viewModel.backToModality,
           onPrimary: viewModel.openSummary,
-          primaryEnabled: viewModel.canContinue,
+          primaryEnabled: viewModel.canContinue && !viewModel.catalogRefreshing,
         ),
       ],
     );

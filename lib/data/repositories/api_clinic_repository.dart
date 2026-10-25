@@ -9,7 +9,7 @@ import '../services/clinical_catalog_codec.dart';
 import '../services/clinic_snapshot_codec.dart';
 import '../services/local_catalog_store.dart';
 import 'clinic_repository.dart';
-import 'mock_clinic_repository.dart';
+import 'clinic_state_store.dart';
 
 class ApiClinicRepository implements ClinicRepository {
   ApiClinicRepository({
@@ -20,7 +20,7 @@ class ApiClinicRepository implements ClinicRepository {
     CatalogStore? catalogStore,
   })  : _catalog = initialCatalog ?? bundledClinicalCatalog,
         _catalogStore = catalogStore ?? LocalCatalogStore(),
-        _local = MockClinicRepository.fromSnapshot(
+        _local = ClinicStateStore.fromSnapshot(
           initial,
           persist: persist,
           ids: newClinicId,
@@ -29,7 +29,7 @@ class ApiClinicRepository implements ClinicRepository {
   }
 
   final ClinicApi api;
-  final MockClinicRepository _local;
+  final ClinicStateStore _local;
   final CatalogStore _catalogStore;
   final _failures = StreamController<String>.broadcast();
   final _notices = StreamController<ApiFeedback>.broadcast();
@@ -97,6 +97,14 @@ class ApiClinicRepository implements ClinicRepository {
       if (epoch != _epoch) return;
       _applyChart(chart);
       await _refreshCatalog(epoch);
+    });
+  }
+
+  @override
+  Future<void> refreshCatalog() {
+    return _enqueue(() async {
+      if (_token.isEmpty && _refreshToken == null) return;
+      await _refreshCatalog(_epoch);
     });
   }
 

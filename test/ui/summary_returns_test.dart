@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_repository.dart';
 import 'package:implate_flow/data/services/clinic_snapshot_codec.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/clinic_snapshot.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/domain/queries.dart';
@@ -17,7 +17,7 @@ void main() {
     final viewModel = NewProcedureViewModel(repository, patientId: patient.id);
     viewModel.chooseModality(Modality.implante);
     viewModel.toggleTooth(11);
-    viewModel.openSummary();
+    await viewModel.openSummary();
     tester.view.physicalSize = const Size(800, 5000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

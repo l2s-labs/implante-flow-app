@@ -27,6 +27,9 @@ abstract class ClinicRepository {
 
   Future<void> refresh() async {}
 
+  /// Atualiza fabricantes/modelos/tamanhos (e enxertos) a partir da API.
+  Future<void> refreshCatalog() async {}
+
   Patient createPatient({
     required String name,
     required String phone,

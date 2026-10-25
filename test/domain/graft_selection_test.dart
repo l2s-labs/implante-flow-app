@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_repository.dart';
 import 'package:implate_flow/data/services/clinic_snapshot_codec.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_viewmodel.dart';
 
@@ -62,14 +62,14 @@ void main() {
     );
   });
 
-  test('enxerto em vários dentes permanece um procedimento e o JSON antigo continua válido', () {
+  test('enxerto em vários dentes permanece um procedimento e o JSON antigo continua válido', () async {
     final repository = MockClinicRepository(MockClinicService());
     final patient = repository.current.patients.first;
     final viewModel = NewProcedureViewModel(repository, patientId: patient.id);
     viewModel.chooseModality(Modality.enxerto);
     viewModel.toggleTooth(16);
     viewModel.toggleTooth(17);
-    viewModel.openSummary();
+    await viewModel.openSummary();
     viewModel.updateDraft(16, (draft) {
       draft.grafts.first
         ..selectMaterial(GraftMaterialChoice.autogeno)

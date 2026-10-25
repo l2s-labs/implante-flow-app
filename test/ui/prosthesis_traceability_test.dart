@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_screen.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_viewmodel.dart';
@@ -28,7 +28,7 @@ void main() {
       } else {
         viewModel.toggleTooth(14);
       }
-      viewModel.openSummary();
+      await viewModel.openSummary();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -55,7 +55,7 @@ void main() {
     viewModel.chooseModality(Modality.protese, subtype: ProcedureSubtype.unitario);
     viewModel.toggleTooth(implant.fdi);
     viewModel.toggleLinkedImplant(implant.id);
-    viewModel.openSummary();
+    await viewModel.openSummary();
 
     await tester.pumpWidget(
       MaterialApp(

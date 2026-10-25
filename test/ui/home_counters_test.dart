@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:implate_flow/data/repositories/clinic_repository.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_repository.dart';
 import 'package:implate_flow/data/services/workos_auth.dart';
 import 'package:implate_flow/domain/clinic_snapshot.dart';
 import 'package:implate_flow/domain/models.dart';

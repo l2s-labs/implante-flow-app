@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:implate_flow/data/services/clinic_snapshot_codec.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_service.dart';
 
 void main() {
   test('snapshot JSON round-trip keeps patients and photos', () {

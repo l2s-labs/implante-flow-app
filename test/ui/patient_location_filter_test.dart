@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/patients/patient_editor.dart';
 import 'package:implate_flow/ui/patients/patients_screen.dart';

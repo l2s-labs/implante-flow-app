@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:implate_flow/data/repositories/mock_clinic_repository.dart';
-import 'package:implate_flow/data/services/mock_clinic_service.dart';
+import '../helpers/mock_clinic_repository.dart';
+import '../helpers/mock_clinic_service.dart';
 import 'package:implate_flow/domain/models.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_screen.dart';
 import 'package:implate_flow/ui/new_procedure/new_procedure_viewmodel.dart';
@@ -41,7 +41,7 @@ Future<NewProcedureViewModel> _openGraftSummary(WidgetTester tester) async {
   final viewModel = NewProcedureViewModel(repository, patientId: patient.id);
   viewModel.chooseModality(Modality.enxerto);
   viewModel.toggleTooth(21);
-  viewModel.openSummary();
+  await viewModel.openSummary();
   tester.view.physicalSize = const Size(800, 2400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
