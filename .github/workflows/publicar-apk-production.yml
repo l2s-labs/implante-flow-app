@@ -1,6 +1,7 @@
 name: Publicar APK (produção)
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
@@ -15,7 +16,7 @@ permissions:
 jobs:
   resolve-version:
     name: Versão do APK de desenvolvimento
-    if: github.head_ref == 'stage'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'stage'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.read.outputs.version }}
@@ -56,7 +57,7 @@ jobs:
 
   release:
     name: Produção
-    if: github.head_ref == 'stage'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'stage'
     needs: resolve-version
     uses: ./.github/workflows/apk-build.yml
     with:
