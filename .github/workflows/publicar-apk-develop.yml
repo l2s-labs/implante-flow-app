@@ -1,0 +1,25 @@
+name: Publicar APK (desenvolvimento)
+
+on:
+  push:
+    branches: [stage]
+  pull_request:
+    branches: [stage]
+  workflow_dispatch:
+
+concurrency:
+  group: apk-develop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Desenvolvimento
+    uses: ./.github/workflows/apk-build.yml
+    with:
+      environment_name: development
+      prerelease: true
+      channel: dev
+    secrets: inherit

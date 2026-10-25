@@ -1,0 +1,67 @@
+name: Publicar APK (produção)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: apk-production-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    name: Versão do APK de desenvolvimento
+    if: github.head_ref == 'stage'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - name: Lê APP_VERSION da última release de desenvolvimento
+        id: read
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$(
+            gh release list --limit 50 --json tagName,isPrerelease,createdAt \
+              --jq '[.[] | select(.isPrerelease and (.tagName | startswith("apk-dev-")))] | sort_by(.createdAt) | reverse | .[0].tagName // empty'
+          )"
+          if [ -z "$tag" ]; then
+            echo "Nenhuma release de desenvolvimento (apk-dev-*) encontrada. Publique antes na branch stage."
+            exit 1
+          fi
+
+          notes="$(gh release view "$tag" --json body --jq .body)"
+          version="$(printf '%s\n' "$notes" | sed -n 's/^APP_VERSION=//p' | head -n 1)"
+
+          if [ -z "$version" ]; then
+            tmp="$(mktemp -d)"
+            if gh release download "$tag" --pattern version.txt --dir "$tmp" 2>/dev/null; then
+              version="$(tr -d '[:space:]' < "$tmp/version.txt")"
+            fi
+          fi
+
+          if [ -z "$version" ]; then
+            echo "Release $tag não tem APP_VERSION nem version.txt."
+            exit 1
+          fi
+
+          echo "Release de desenvolvimento: $tag"
+          echo "APP_VERSION=$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Produção
+    if: github.head_ref == 'stage'
+    needs: resolve-version
+    uses: ./.github/workflows/apk-build.yml
+    with:
+      environment_name: production
+      prerelease: false
+      channel: prod
+      app_version: ${{ needs.resolve-version.outputs.version }}
+    secrets: inherit

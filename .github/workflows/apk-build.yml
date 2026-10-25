@@ -1,0 +1,203 @@
+name: Build APK
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: GitHub Environment (development | production)
+        type: string
+        required: true
+      prerelease:
+        description: Publicar a release do GitHub como pré-release
+        type: boolean
+        required: true
+      channel:
+        description: Canal da build (dev | prod) — entra no nome do APK e nas notas
+        type: string
+        required: true
+      app_version:
+        description: Versão do app (ex. 1.0.0+1). Vazio = lê do pubspec.yaml
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Compilar e publicar (${{ inputs.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment_name }}
+    steps:
+      - name: Baixa o código
+        uses: actions/checkout@v4
+
+      - name: Prepara o Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Prepara o Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: Resolve a versão
+        id: version
+        env:
+          APP_VERSION_INPUT: ${{ inputs.app_version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APP_VERSION_INPUT" ]; then
+            version="$APP_VERSION_INPUT"
+          else
+            version="$(awk '/^version:/ { print $2 }' pubspec.yaml)"
+          fi
+          case "$version" in
+            *+*) ;;
+            *)
+              echo "Versão inválida '$version' (esperado nome+número, ex. 1.0.0+1)."
+              exit 1
+              ;;
+          esac
+          build_name="${version%%+*}"
+          build_number="${version##*+}"
+          safe="${version//+/-}"
+          {
+            echo "version=$version"
+            echo "build_name=$build_name"
+            echo "build_number=$build_number"
+            echo "safe=$safe"
+          } >> "$GITHUB_OUTPUT"
+          echo "Versão=${version} (name=${build_name} number=${build_number})"
+
+      - name: Grava a configuração de compilação
+        env:
+          WORKOS_CLIENT_ID: ${{ secrets.WORKOS_CLIENT_ID }}
+          WORKOS_REDIRECT_URI: ${{ secrets.WORKOS_REDIRECT_URI }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WORKOS_CLIENT_ID" ] || [ -z "$API_BASE_URL" ]; then
+            echo "Defina WORKOS_CLIENT_ID e API_BASE_URL no environment ${{ inputs.environment_name }} (ou nos secrets do repositório)."
+            exit 1
+          fi
+          case "$API_BASE_URL" in
+            http://*|https://*) ;;
+            *)
+              echo "API_BASE_URL precisa começar com http:// ou https://."
+              exit 1
+              ;;
+          esac
+          case "$API_BASE_URL" in
+            *127.0.0.1*|*localhost*|*10.0.2.2*)
+              echo "API_BASE_URL de release não pode ser o endereço local do emulador."
+              exit 1
+              ;;
+          esac
+          if [ "$CHANNEL" = "prod" ]; then
+            case "$API_BASE_URL" in
+              *staging*|*develop*|*dev.*)
+                echo "API de produção não deve apontar para staging/dev."
+                exit 1
+                ;;
+            esac
+          fi
+          redirect="${WORKOS_REDIRECT_URI:-br.com.implateflow://auth/callback}"
+          jq -n \
+            --arg client "$WORKOS_CLIENT_ID" \
+            --arg redirect "$redirect" \
+            --arg api "$API_BASE_URL" \
+            '{WORKOS_CLIENT_ID:$client, WORKOS_REDIRECT_URI:$redirect, API_BASE_URL:$api}' \
+            > config/local.json
+          echo "Canal=${CHANNEL} API_BASE_URL=${API_BASE_URL}"
+
+      - name: Prepara a assinatura
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Defina ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS e ANDROID_KEY_PASSWORD."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          printf '%s\n' \
+            "storePassword=${ANDROID_KEYSTORE_PASSWORD}" \
+            "keyPassword=${ANDROID_KEY_PASSWORD}" \
+            "keyAlias=${ANDROID_KEY_ALIAS}" \
+            "storeFile=upload-keystore.jks" \
+            > android/key.properties
+
+      - name: Compila o APK
+        env:
+          BUILD_NAME: ${{ steps.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          flutter build apk --release \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define-from-file=config/local.json
+
+      - name: Publica a release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SAFE: ${{ steps.version.outputs.safe }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          safe="$SAFE"
+          printf '%s\n' "$version" > version.txt
+
+          if [ "$CHANNEL" = "dev" ]; then
+            package="implate-flow-dev-${safe}.apk"
+            title="Implate Flow ${version} (desenvolvimento)"
+            tag="apk-dev-${safe}"
+          else
+            package="implate-flow-${safe}.apk"
+            title="Implate Flow ${version}"
+            tag="v${safe}"
+          fi
+          cp build/app/outputs/flutter-apk/app-release.apk "$package"
+
+          notes="$(printf '%s\n' \
+            "APK **${CHANNEL}** para instalação direta." \
+            "" \
+            "APP_VERSION=${version}" \
+            "" \
+            "- Versão: \`${version}\`" \
+            "- Canal: \`${CHANNEL}\`" \
+            "- Environment: \`${ENVIRONMENT_NAME}\`" \
+            "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment." \
+            "- Atualizações seguintes precisam do mesmo keystore.")"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$package" version.txt --clobber
+            if [ "$PRERELEASE" = "true" ]; then
+              gh release edit "$tag" --title "$title" --notes "$notes" --prerelease
+            else
+              gh release edit "$tag" --title "$title" --notes "$notes" --prerelease=false
+            fi
+          elif [ "$PRERELEASE" = "true" ]; then
+            gh release create "$tag" "$package" version.txt --title "$title" --notes "$notes" --prerelease
+          else
+            gh release create "$tag" "$package" version.txt --title "$title" --notes "$notes"
+          fi
+
+          echo "Release: ${tag}"
+          echo "Artifact: ${package}"
+          echo "APP_VERSION=${version}"
