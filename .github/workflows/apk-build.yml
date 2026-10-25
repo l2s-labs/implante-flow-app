@@ -24,6 +24,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # Alinhado a flutter.ndkVersion (Flutter 3.47.7).
+  ANDROID_NDK_VERSION: "28.2.13676358"
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  ANDROID_HOME: /usr/local/lib/android/sdk
+
 jobs:
   apk:
     name: Compilar e publicar (${{ inputs.channel }})
@@ -39,6 +45,25 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Cache do Android NDK
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.ANDROID_NDK_VERSION }}
+          key: ${{ runner.os }}-android-ndk-${{ env.ANDROID_NDK_VERSION }}
+
+      - name: Instala o Android NDK (só se o cache falhar)
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          yes | "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Prepara o Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Prepara o Flutter
         uses: subosito/flutter-action@v2
@@ -137,6 +162,9 @@ jobs:
             "keyAlias=${ANDROID_KEY_ALIAS}" \
             "storeFile=upload-keystore.jks" \
             > android/key.properties
+
+      - name: Resolve dependências Dart
+        run: flutter pub get
 
       - name: Compila o APK
         env:
