@@ -4,6 +4,35 @@ import '../../domain/models.dart';
 
 const _referenceValuePrefix = '\u{200B}ref:';
 
+/// Altura preferida do painel; nunca passa do espaço sob o campo (evita flip para cima).
+const _preferredMenuHeight = 210.0;
+const _minMenuHeight = 80.0;
+
+const _menuStyle = MenuStyle(
+  alignment: AlignmentDirectional.bottomStart,
+);
+
+double _menuHeightFor(BuildContext context) {
+  final media = MediaQuery.of(context);
+  final box = context.findRenderObject() as RenderBox?;
+  if (box == null || !box.hasSize) return _preferredMenuHeight;
+
+  final fieldBottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+  final usableBottom = media.size.height - media.viewInsets.bottom;
+  final availableBelow = usableBottom - fieldBottom - 8;
+  if (!availableBelow.isFinite || availableBelow <= 0) return _minMenuHeight;
+  // Cabe sempre abaixo → o MenuAnchor não precisa abrir para cima.
+  return availableBelow.clamp(_minMenuHeight, _preferredMenuHeight);
+}
+
+void _dismissFieldFocus() {
+  FocusManager.instance.primaryFocus?.unfocus();
+  // O DropdownMenu pode devolver o foco ao TextField no mesmo frame.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    FocusManager.instance.primaryFocus?.unfocus();
+  });
+}
+
 bool _isReferenceMenuValue(String value) => value.startsWith(_referenceValuePrefix);
 
 String encodeReferenceMenuValue(String reference) => '$_referenceValuePrefix$reference';
@@ -88,6 +117,8 @@ class _StaticPresetDropdown extends StatelessWidget {
           key: ValueKey('$label-${items.join()}-$value-$enabled'),
           enabled: enabled,
           width: width,
+          menuHeight: _menuHeightFor(context),
+          menuStyle: _menuStyle,
           initialSelection: current,
           label: Text(label),
           hintText: enabled ? (hintText ?? 'Buscar') : null,
@@ -107,7 +138,9 @@ class _StaticPresetDropdown extends StatelessWidget {
           },
           onSelected: enabled
               ? (selected) {
-                  if (selected != null) onChanged(selected);
+                  if (selected == null) return;
+                  onChanged(selected);
+                  _dismissFieldFocus();
                 }
               : null,
         );
@@ -186,6 +219,8 @@ class _FilteringPresetDropdownState extends State<_FilteringPresetDropdown> {
           key: ValueKey('${widget.label}-${items.join()}-${widget.enabled}'),
           enabled: widget.enabled,
           width: width,
+          menuHeight: _menuHeightFor(context),
+          menuStyle: _menuStyle,
           controller: _controller,
           initialSelection: items.contains(widget.value) ? widget.value : null,
           label: Text(widget.label),
@@ -218,6 +253,7 @@ class _FilteringPresetDropdownState extends State<_FilteringPresetDropdown> {
               ? (selected) {
                   if (selected == null) return;
                   widget.onChanged(decodeReferenceMenuValue(selected) ?? selected);
+                  _dismissFieldFocus();
                 }
               : null,
         );
