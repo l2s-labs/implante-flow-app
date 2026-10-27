@@ -35,8 +35,9 @@ class PatientScreen extends StatelessWidget {
       );
     }
     final upcoming = viewModel.upcoming;
-    final timeline = viewModel.timeline;
     final implants = viewModel.implants;
+    final procedures = [...viewModel.history]
+      ..sort((a, b) => b.surgeryDate.compareTo(a.surgeryDate));
     return Scaffold(
       appBar: AppBar(
         title: Text(patient.name),
@@ -88,8 +89,8 @@ class PatientScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           const AppSectionHeader(
-            title: 'Implantes',
-            subtitle: 'Inclui cirurgias do sistema e preexistentes informados.',
+            title: 'Implantes instalados',
+            subtitle: 'Peças no dente (FDI). Não é o histórico de atos clínicos.',
           ),
           const SizedBox(height: 8),
           if (implants.isEmpty)
@@ -157,20 +158,21 @@ class PatientScreen extends StatelessWidget {
               const SizedBox(height: 8),
             ],
           const SizedBox(height: 12),
-          const AppSectionHeader(title: 'Histórico'),
+          const AppSectionHeader(
+            title: 'Procedimentos',
+            subtitle: 'Atos clínicos no tempo (instalação, enxerto, prótese, reabertura…).',
+          ),
           const SizedBox(height: 8),
-          if (timeline.isEmpty)
-            const AppEmptyHint('Nenhuma cirurgia ou consulta.')
+          if (procedures.isEmpty)
+            const AppEmptyHint('Nenhum procedimento cadastrado.')
           else
-            for (final event in timeline) ...[
+            for (final procedure in procedures) ...[
               AppSurfaceCard(
                 child: ListTile(
-                  title: Text(event.title),
-                  subtitle: Text('${formatDay(event.date)} · ${event.detail}'),
-                  trailing: event.procedureId == null ? null : const Icon(Icons.chevron_right),
-                  onTap: event.procedureId == null
-                      ? null
-                      : () => context.push('/procedures/${event.procedureId}'),
+                  title: Text(_procedureTitle(procedure)),
+                  subtitle: Text(_procedureSubtitle(procedure)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/procedures/${procedure.id}'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -216,6 +218,21 @@ class PatientScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+String _procedureTitle(Procedure procedure) {
+  final teeth = procedure.teethLabel;
+  if (teeth.isEmpty) return procedure.classificationLabel;
+  return '${procedure.classificationLabel} · $teeth';
+}
+
+String _procedureSubtitle(Procedure procedure) {
+  final parts = <String>[
+    formatDay(procedure.surgeryDate),
+    clinicalStatusDisplay(procedure.statusLabel, procedure.modality),
+    if (procedure.teethLabel.isNotEmpty) procedure.teethLabel,
+  ].where((part) => part.trim().isNotEmpty).toList();
+  return parts.join(' · ');
 }
 
 String _locationLine(Patient patient, List<CareLocation> locations) {
