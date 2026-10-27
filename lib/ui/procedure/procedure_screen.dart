@@ -61,7 +61,16 @@ class ProcedureScreen extends StatelessWidget {
     ]..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
-      appBar: AppBar(title: Text(procedure.classificationLabel)),
+      appBar: AppBar(
+        title: Text(procedure.classificationLabel),
+        actions: [
+          IconButton(
+            tooltip: 'Excluir procedimento',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => _confirmDeleteProcedure(context, viewModel, procedure),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
@@ -279,6 +288,48 @@ class ProcedureScreen extends StatelessWidget {
       status: result.status,
       statusDate: result.date,
     );
+  }
+
+
+  Future<void> _confirmDeleteProcedure(
+    BuildContext context,
+    ProcedureViewModel viewModel,
+    Procedure procedure,
+  ) async {
+    final label = procedure.classificationLabel;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir procedimento'),
+        content: Text(
+          'Excluir "$label"?\n\n'
+          'O procedimento some da lista do paciente. Esta ação não pode ser desfeita neste app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!context.mounted) return;
+    try {
+      await viewModel.deleteProcedure();
+      if (!context.mounted) return;
+      context.pop();
+    } catch (_) {
+      // Erro já vai para ApiFeedbackHost; permanece na tela.
+    }
   }
 
   Future<void> _editNotes(BuildContext context, ProcedureViewModel viewModel) async {

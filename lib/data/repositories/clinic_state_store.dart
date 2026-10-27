@@ -237,6 +237,19 @@ class ClinicStateStore implements ClinicRepository {
   }
 
   @override
+  Future<void> deleteProcedure(String procedureId) async {
+    if (!_snapshot.procedures.any((item) => item.id == procedureId)) return;
+    _emit(
+      _snapshot.copyWith(
+        procedures: [
+          for (final item in _snapshot.procedures)
+            if (item.id != procedureId) item,
+        ],
+      ),
+    );
+  }
+
+  @override
   void addPhoto(String procedureId, ClinicPhoto photo) {
     _replace(procedureId, (procedure) {
       return procedure.copyWith(photos: [...procedure.photos, photo]);

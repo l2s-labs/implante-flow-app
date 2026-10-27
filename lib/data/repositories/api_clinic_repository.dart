@@ -205,6 +205,33 @@ class ApiClinicRepository implements ClinicRepository {
   }
 
   @override
+  Future<void> deleteProcedure(String procedureId) async {
+    _epoch++;
+    // Some da lista imediatamente; se a API negar, reconcilia o chart.
+    await _local.deleteProcedure(procedureId);
+    try {
+      await _authorized((token) => api.deleteProcedure(token, procedureId));
+      _notices.add(ApiFeedback.success('Procedimento excluído.'));
+    } on ClinicApiException catch (error) {
+      final message = switch (error.statusCode) {
+        403 || 404 => 'Este procedimento não está disponível para exclusão.',
+        0 => error.message,
+        _ => error.message,
+      };
+      _notices.add(ApiFeedback.error(message));
+      await _reconcile();
+      throw ClinicApiException(error.statusCode, message, code: error.code);
+    } catch (error) {
+      final message = error is ClinicApiException
+          ? error.message
+          : friendlyApiMessage(0);
+      _notices.add(ApiFeedback.error(message));
+      await _reconcile();
+      rethrow;
+    }
+  }
+
+  @override
   void addPhoto(String procedureId, ClinicPhoto photo) {
     _epoch++;
     _local.addPhoto(procedureId, photo);

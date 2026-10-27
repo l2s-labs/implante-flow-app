@@ -618,6 +618,10 @@ class ProcedureViewModel extends RepositoryViewModel {
     repository.updateProcedure(current.copyWith(notes: notes));
   }
 
+  Future<void> deleteProcedure() {
+    return repository.deleteProcedure(procedureId);
+  }
+
   void reprocessNotice(String noticeId) =>
       repository.reprocessStageNotice(procedureId: procedureId, noticeId: noticeId);
 
