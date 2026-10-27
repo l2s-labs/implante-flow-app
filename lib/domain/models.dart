@@ -515,7 +515,7 @@ enum ImplantOrigin { preexisting, procedureRecorded }
 
 String implantOriginLabel(ImplantOrigin origin) => switch (origin) {
       ImplantOrigin.preexisting => 'Preexistente / histórico informado',
-      ImplantOrigin.procedureRecorded => 'Cirurgia no sistema',
+      ImplantOrigin.procedureRecorded => 'Registrado no sistema',
     };
 
 ImplantOrigin implantOriginFromWire(String? value) => switch (value) {
