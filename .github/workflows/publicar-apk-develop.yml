@@ -22,4 +22,6 @@ jobs:
       environment_name: development
       prerelease: true
       channel: dev
+      # Bump em push/dispatch na stage; PR só compila sem alterar o pubspec.
+      bump_version: ${{ github.event_name != 'pull_request' }}
     secrets: inherit

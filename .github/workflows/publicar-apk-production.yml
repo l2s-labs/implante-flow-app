@@ -52,6 +52,19 @@ jobs:
             exit 1
           fi
 
+          case "$version" in
+            *+*) ;;
+            *)
+              echo "APP_VERSION inválida '$version' (esperado nome+número)."
+              exit 1
+              ;;
+          esac
+          name="${version%%+*}"
+          number="${version##*+}"
+          # Remove sufixo -dev se a release antiga gravou a versão de display.
+          name="${name%-dev}"
+          version="${name}+${number}"
+
           echo "Release de desenvolvimento: $tag"
           echo "APP_VERSION=$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"

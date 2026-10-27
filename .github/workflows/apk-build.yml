@@ -20,6 +20,11 @@ on:
         type: string
         required: false
         default: ""
+      bump_version:
+        description: Incrementa o build number no pubspec e faz push (use [skip ci])
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -41,6 +46,10 @@ jobs:
     steps:
       - name: Baixa o código
         uses: actions/checkout@v4
+        with:
+          # Precisa persistir credenciais para o bump commit/push em stage.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepara o Java
         uses: actions/setup-java@v4
@@ -86,12 +95,14 @@ jobs:
         id: version
         env:
           APP_VERSION_INPUT: ${{ inputs.app_version }}
+          BUMP_VERSION: ${{ inputs.bump_version }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           if [ -n "$APP_VERSION_INPUT" ]; then
             version="$APP_VERSION_INPUT"
           else
-            version="$(awk '/^version:/ { print $2 }' pubspec.yaml)"
+            version="$(awk '/^version:/ { print $2; exit }' pubspec.yaml)"
           fi
           case "$version" in
             *+*) ;;
@@ -100,16 +111,62 @@ jobs:
               exit 1
               ;;
           esac
+
           build_name="${version%%+*}"
+          # Canonicaliza: remove sufixo -dev do nome se vier da release anterior.
+          build_name="${build_name%-dev}"
           build_number="${version##*+}"
-          safe="${version//+/-}"
+
+          if [ "$BUMP_VERSION" = "true" ]; then
+            if ! [[ "$build_number" =~ ^[0-9]+$ ]]; then
+              echo "Build number inválido '$build_number'."
+              exit 1
+            fi
+            build_number="$((build_number + 1))"
+            version="${build_name}+${build_number}"
+            sed -i -E "s/^version: .*/version: ${version}/" pubspec.yaml
+            echo "Bump → ${version}"
+          else
+            version="${build_name}+${build_number}"
+          fi
+
+          # Canal develop: versionName / artefato com sufixo -dev (ex. 1.0.0-dev+2).
+          if [ "$CHANNEL" = "dev" ]; then
+            display_name="${build_name}-dev"
+            release_version="${display_name}+${build_number}"
+          else
+            display_name="$build_name"
+            release_version="$version"
+          fi
+          safe="${release_version//+/-}"
+          tag_safe="${version//+/-}"
+
           {
             echo "version=$version"
-            echo "build_name=$build_name"
+            echo "release_version=$release_version"
+            echo "build_name=$display_name"
             echo "build_number=$build_number"
             echo "safe=$safe"
+            echo "tag_safe=$tag_safe"
+            echo "bumped=$BUMP_VERSION"
           } >> "$GITHUB_OUTPUT"
-          echo "Versão=${version} (name=${build_name} number=${build_number})"
+          echo "Versão canônica=${version} | build=${display_name}+${build_number} | release=${release_version}"
+
+      - name: Commita o bump no pubspec
+        if: inputs.bump_version
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pubspec.yaml; then
+            echo "pubspec.yaml sem alteração de versão."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore(release): bump ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin "HEAD:${BRANCH}"
 
       - name: Grava a configuração de compilação
         env:
@@ -205,21 +262,26 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
           ENVIRONMENT_NAME: ${{ inputs.environment_name }}
           VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
           SAFE: ${{ steps.version.outputs.safe }}
+          TAG_SAFE: ${{ steps.version.outputs.tag_safe }}
         run: |
           set -euo pipefail
+          # Canônica (sem -dev) para promoção à produção; release_version inclui -dev no canal develop.
           version="$VERSION"
+          release_version="$RELEASE_VERSION"
           safe="$SAFE"
+          tag_safe="$TAG_SAFE"
           printf '%s\n' "$version" > version.txt
 
           if [ "$CHANNEL" = "dev" ]; then
-            package="implate-flow-dev-${safe}.apk"
-            title="Implate Flow ${version} (desenvolvimento)"
-            tag="apk-dev-${safe}"
+            package="implate-flow-${safe}.apk"
+            title="Implate Flow ${release_version} (desenvolvimento)"
+            tag="apk-dev-${tag_safe}"
           else
             package="implate-flow-${safe}.apk"
-            title="Implate Flow ${version}"
-            tag="v${safe}"
+            title="Implate Flow ${release_version}"
+            tag="v${tag_safe}"
           fi
           cp build/app/outputs/flutter-apk/app-release.apk "$package"
 
@@ -227,8 +289,10 @@ jobs:
             "APK **${CHANNEL}** para instalação direta." \
             "" \
             "APP_VERSION=${version}" \
+            "RELEASE_VERSION=${release_version}" \
             "" \
-            "- Versão: \`${version}\`" \
+            "- Versão: \`${release_version}\`" \
+            "- Canônica: \`${version}\`" \
             "- Canal: \`${CHANNEL}\`" \
             "- Environment: \`${ENVIRONMENT_NAME}\`" \
             "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment." \
