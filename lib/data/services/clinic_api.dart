@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../../domain/certificate.dart';
 import '../../domain/models.dart';
@@ -208,21 +209,30 @@ class ClinicApi {
     await _send('POST', '/v1/locations/$locationId/reactivate', token: token);
   }
 
-  Future<void> issueCertificate(
+  Future<Map<String, dynamic>> issueCertificate(
     String token,
     String procedureId, {
     int copies = 1,
     String? locationId,
   }) async {
-    await _send(
-      'POST',
-      '/v1/procedures/$procedureId/certificates',
-      token: token,
-      body: {
-        'copies': copies == 2 ? 2 : 1,
-        if (locationId != null && locationId.isNotEmpty) 'locationId': locationId,
-      },
+    return _object(
+      await _send(
+        'POST',
+        '/v1/procedures/$procedureId/certificates',
+        token: token,
+        body: {
+          'copies': copies == 2 ? 2 : 1,
+          if (locationId != null && locationId.isNotEmpty) 'locationId': locationId,
+        },
+      ),
     );
+  }
+
+  Future<Uint8List> downloadBytes(String url) async {
+    if (_transport is IoClinicTransport) {
+      return _transport.getBytes(url);
+    }
+    throw const ClinicApiException(500, 'Download de arquivo indisponível neste ambiente.');
   }
 
   Future<void> uploadPhoto(String token, String procedureId, ClinicPhoto photo) async {
@@ -311,6 +321,23 @@ class IoClinicTransport implements ClinicTransport {
     await response.drain<void>();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ClinicApiException(response.statusCode, 'Não foi possível enviar a foto.');
+    }
+  }
+
+  Future<Uint8List> getBytes(String url) async {
+    try {
+      final request = await _client.getUrl(Uri.parse(url));
+      final response = await request.close().timeout(const Duration(seconds: 30));
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        builder.add(chunk);
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ClinicApiException(response.statusCode, 'Não foi possível baixar o certificado.');
+      }
+      return builder.takeBytes();
+    } on SocketException {
+      throw const ClinicApiException(0, 'Não foi possível baixar o certificado.');
     }
   }
 }

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../services/api_feedback.dart';
 import '../services/clinic_api.dart';
+import '../services/clinic_files.dart';
 import '../services/clinical_catalog_codec.dart';
 import '../services/clinic_snapshot_codec.dart';
 import '../services/local_catalog_store.dart';
@@ -264,34 +266,31 @@ class ApiClinicRepository implements ClinicRepository {
   }
 
   @override
-  void issueCertificate(
+  Future<Uint8List> issueCertificate(
     String procedureId, {
-    String? pdfPath,
     int copies = 1,
     String? locationId,
-  }) {
+  }) async {
     _epoch++;
-    _local.issueCertificate(
-      procedureId,
-      pdfPath: pdfPath,
-      copies: copies,
-      locationId: locationId,
+    final issued = await _authorized(
+      (token) => api.issueCertificate(
+        token,
+        procedureId,
+        copies: copies,
+        locationId: locationId,
+      ),
     );
-    _enqueue(() async {
-      try {
-        await _authorized(
-          (token) => api.issueCertificate(
-            token,
-            procedureId,
-            copies: copies,
-            locationId: locationId,
-          ),
-        );
-      } on ClinicApiException catch (error) {
-        if (error.statusCode == 503) return;
-        rethrow;
-      }
-    });
+    final downloadUrl = issued['downloadUrl'] as String? ?? '';
+    if (downloadUrl.isEmpty) {
+      throw const ClinicApiException(500, 'A API não devolveu o link do certificado.');
+    }
+    final bytes = await api.downloadBytes(downloadUrl);
+    final path = await ClinicFiles().saveBytes(
+      'certificado-$procedureId.pdf',
+      bytes,
+    );
+    _local.recordCertificateEmission(procedureId, pdfPath: path);
+    return bytes;
   }
 
   @override

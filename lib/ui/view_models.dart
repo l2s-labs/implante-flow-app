@@ -6,7 +6,6 @@ import 'package:printing/printing.dart';
 import '../config/app_config.dart';
 import '../data/repositories/clinic_repository.dart';
 import '../data/services/api_feedback.dart';
-import '../data/services/clinic_files.dart';
 import '../data/services/clinic_pdfs.dart';
 import '../data/services/workos_auth.dart';
 import '../domain/certificate.dart';
@@ -664,27 +663,15 @@ class CertificateViewModel extends RepositoryViewModel {
 
   Future<void> issue() async {
     final currentProcedure = procedure;
-    final currentPatient = patient;
     final location = selectedLocation;
-    if (currentProcedure == null || currentPatient == null || location == null) return;
+    if (currentProcedure == null || location == null) return;
     final copies = emitTwoCopies ? 2 : 1;
-    final bytes = await buildCertificatePdf(
-      profile: profile,
-      patient: currentPatient,
-      procedure: currentProcedure,
-      location: location,
-      copies: copies,
-    );
-    final path = await ClinicFiles().saveBytes(
-      'certificado-${currentProcedure.id}.pdf',
-      bytes,
-    );
-    repository.issueCertificate(
+    final bytes = await repository.issueCertificate(
       procedureId,
-      pdfPath: path,
       copies: copies,
       locationId: location.id,
     );
+    if (bytes.isEmpty) return;
     await Printing.sharePdf(bytes: bytes, filename: 'certificado-${currentProcedure.id}.pdf');
   }
 }

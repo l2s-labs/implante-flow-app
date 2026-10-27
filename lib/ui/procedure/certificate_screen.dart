@@ -224,7 +224,7 @@ class CertificateScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               procedure.certificateIssuedAt == null
-                  ? 'O PDF é gerado neste aparelho.'
+                  ? 'O PDF é gerado no servidor e baixado neste aparelho.'
                   : 'Emitido em ${formatDay(procedure.certificateIssuedAt!)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -233,14 +233,23 @@ class CertificateScreen extends StatelessWidget {
               onPressed: !canIssue
                   ? null
                   : () async {
-                      await viewModel.issue();
+                      final wasIssued = procedure.certificateIssuedAt != null;
+                      try {
+                        await viewModel.issue();
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error.toString())),
+                        );
+                        return;
+                      }
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            procedure.certificateIssuedAt == null
-                                ? 'PDF do certificado gerado.'
-                                : 'Certificado reemitido com o rastreio atual.',
+                            wasIssued
+                                ? 'Certificado reemitido com o rastreio atual.'
+                                : 'PDF do certificado gerado.',
                           ),
                         ),
                       );

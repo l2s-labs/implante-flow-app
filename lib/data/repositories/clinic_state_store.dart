@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
@@ -350,19 +351,23 @@ class ClinicStateStore implements ClinicRepository {
     });
   }
 
-  @override
-  void issueCertificate(
-    String procedureId, {
-    String? pdfPath,
-    int copies = 1,
-    String? locationId,
-  }) {
+  void recordCertificateEmission(String procedureId, {String? pdfPath}) {
     _replace(procedureId, (procedure) {
       return procedure.copyWith(
         certificateIssuedAt: DateTime.now(),
         certificatePdfPath: pdfPath,
       );
     });
+  }
+
+  @override
+  Future<Uint8List> issueCertificate(
+    String procedureId, {
+    int copies = 1,
+    String? locationId,
+  }) async {
+    recordCertificateEmission(procedureId);
+    return Uint8List(0);
   }
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../services/api_feedback.dart';
@@ -64,9 +66,8 @@ abstract class ClinicRepository {
     required ReturnStatus returnStatus,
   });
 
-  void issueCertificate(
+  Future<Uint8List> issueCertificate(
     String procedureId, {
-    String? pdfPath,
     int copies = 1,
     String? locationId,
   });
