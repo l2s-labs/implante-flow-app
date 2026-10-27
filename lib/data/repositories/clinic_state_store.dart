@@ -5,6 +5,8 @@ import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../services/api_feedback.dart';
+import '../services/cep_lookup.dart';
+import '../services/clinic_api.dart';
 import 'clinic_repository.dart';
 
 /// Estado mutável do prontuário em memória (cache local + persistência opcional).
@@ -60,6 +62,15 @@ class ClinicStateStore implements ClinicRepository {
 
   @override
   Future<void> refreshCatalog() async {}
+
+  @override
+  Future<CepAddress> lookupCep(String cep) async {
+    throw const ClinicApiException(
+      0,
+      'Consulta de CEP disponível apenas com a API.',
+      code: 'viacep_unavailable',
+    );
+  }
 
   @override
   void applyOverdueNotices() {
@@ -301,6 +312,75 @@ class ClinicStateStore implements ClinicRepository {
       );
     });
   }
+
+  @override
+  void updateProsthesisFollowUp({
+    required String followUpId,
+    required ProsthesisFollowUpStatus status,
+    DateTime? statusDate,
+  }) {
+    final procedure = _procedureOfFollowUp(followUpId);
+    if (procedure == null) return;
+    final current = procedure.followUps.where((item) => item.id == followUpId).first;
+    if (!current.isProsthesisTrack || current.phase != FollowUpPhase.definitive) return;
+    final dates = Map<String, DateTime?>.from(current.statusDates);
+    if (statusDate != null) {
+      dates[status.name] = dateOnly(statusDate);
+    }
+    final updated = current.copyWith(
+      prosthesisStatus: status,
+      statusDates: dates,
+      status: status == ProsthesisFollowUpStatus.installed
+          ? ReturnStatus.realizado
+          : ReturnStatus.agendado,
+    );
+    _emit(
+      _snapshot.copyWith(
+        procedures: [
+          for (final item in _snapshot.procedures)
+            if (item.id == procedure.id)
+              item.copyWith(
+                followUps: [
+                  for (final followUp in item.followUps)
+                    if (followUp.id == followUpId) updated else followUp,
+                ],
+              )
+            else
+              item,
+        ],
+      ),
+    );
+  }
+
+  @override
+  void addProsthesisFollowUp({
+    required String procedureId,
+    required FollowUpPhase phase,
+  }) {
+    final procedure = _snapshot.procedures.where((item) => item.id == procedureId).firstOrNull;
+    if (procedure == null || procedure.modality != Modality.protese) return;
+    final followUp = FollowUp(
+      id: allocateId('ret'),
+      date: dateOnly(brasiliaToday()),
+      reason: ReturnReason.controle,
+      status: ReturnStatus.agendado,
+      reminderEnabled: false,
+      phase: phase,
+      prosthesisStatus: phase == FollowUpPhase.definitive ? ProsthesisFollowUpStatus.molded : null,
+    );
+    _emit(
+      _snapshot.copyWith(
+        procedures: [
+          for (final item in _snapshot.procedures)
+            if (item.id == procedureId)
+              item.copyWith(followUps: chronologicalFollowUps([...item.followUps, followUp]))
+            else
+              item,
+        ],
+      ),
+    );
+  }
+
 
   List<StageNotice> _withNotice(
     Procedure procedure, {
