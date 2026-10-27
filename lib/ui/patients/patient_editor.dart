@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/date_picker.dart';
 
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
@@ -245,7 +246,7 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
                     subtitle: Text(formatDay(birth)),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {
-                      final picked = await showDatePicker(
+                      final picked = await showAppDatePicker(
                         context: context,
                         initialDate: birth,
                         firstDate: DateTime(1920),
