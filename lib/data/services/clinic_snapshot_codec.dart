@@ -211,6 +211,13 @@ Map<String, dynamic> _procedureToJson(Procedure procedure) {
           'reminderEnabled': followUp.reminderEnabled,
           'reminderDaysBefore': followUp.reminderDaysBefore,
           'overdueNotified': followUp.overdueNotified,
+          if (followUp.phase != null) 'phase': followUp.phase!.name,
+          if (followUp.prosthesisStatus != null) 'prosthesisStatus': followUp.prosthesisStatus!.name,
+          if (followUp.statusDates.isNotEmpty)
+            'statusDates': {
+              for (final entry in followUp.statusDates.entries)
+                entry.key: entry.value == null ? null : _date(entry.value!),
+            },
         },
     ],
     'photos': [
@@ -295,6 +302,26 @@ Procedure _procedureFromJson(Map<String, dynamic> json) {
           reminderEnabled: item['reminderEnabled'] as bool? ?? true,
           reminderDaysBefore: _reminderDays(item),
           overdueNotified: item['overdueNotified'] as bool? ?? false,
+          phase: item['phase'] == null
+              ? null
+              : FollowUpPhase.values.byName(item['phase'] as String),
+          prosthesisStatus: () {
+            final raw = item['prosthesisStatus'] ?? (item['phase'] == null ? null : item['status']);
+            if (raw is! String || raw.isEmpty) return null;
+            if (ReturnStatus.values.any((value) => value.name == raw)) return null;
+            try {
+              return ProsthesisFollowUpStatus.values.byName(raw);
+            } catch (_) {
+              return null;
+            }
+          }(),
+          statusDates: {
+            for (final entry
+                in (item['statusDates'] as Map? ?? item['status_dates'] as Map? ?? const {}).entries)
+              if (entry.key is String)
+                entry.key as String:
+                    entry.value == null ? null : _parseDate(entry.value as String),
+          },
         ),
     ],
     photos: [
