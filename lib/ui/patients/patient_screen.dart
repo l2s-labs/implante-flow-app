@@ -6,6 +6,7 @@ import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/layout.dart';
 import '../view_models.dart';
+import 'implant_detail_sheet.dart';
 import 'patient_editor.dart';
 import 'preexisting_implant_sheet.dart';
 
@@ -139,7 +140,12 @@ class PatientScreen extends StatelessWidget {
                   isThreeLine: implant.notes.isNotEmpty,
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
-                    if (implant.sourceProcedureId != null) {
+                    final action = await showImplantDetailSheet(
+                      context,
+                      implant: implant,
+                    );
+                    if (action == null || !context.mounted) return;
+                    if (action == ImplantDetailAction.viewProcedure) {
                       context.push('/procedures/${implant.sourceProcedureId}');
                       return;
                     }
