@@ -338,6 +338,34 @@ class _SummaryStep extends StatelessWidget {
                   label: const Text('Retorno para reabertura'),
                 ),
               ],
+              if (viewModel.isProsthesis) ...[
+                const SizedBox(height: 20),
+                const AppSectionHeader(
+                  title: 'Follow-up de prótese',
+                  subtitle: 'Provisório sem status · definitivo com etapas (pode pular).',
+                ),
+                const SizedBox(height: 8),
+                for (final draft in viewModel.prosthesisFollowUps) ...[
+                  _ProsthesisFollowUpEditor(viewModel: viewModel, draft: draft),
+                  const SizedBox(height: 8),
+                ],
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => viewModel.addProsthesisFollowUp(FollowUpPhase.provisional),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Provisório'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => viewModel.addProsthesisFollowUp(FollowUpPhase.definitive),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Definitivo'),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -808,4 +836,96 @@ Future<void> _pickDate(BuildContext context, DateTime current, ValueChanged<Date
     lastDate: DateTime(2040),
   );
   if (picked != null) onPicked(dateOnly(picked));
+}
+
+
+class _ProsthesisFollowUpEditor extends StatelessWidget {
+  const _ProsthesisFollowUpEditor({required this.viewModel, required this.draft});
+
+  final NewProcedureViewModel viewModel;
+  final ProsthesisFollowUpDraft draft;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      followUpPhaseLabel(draft.phase),
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remover',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => viewModel.removeProsthesisFollowUp(draft.id),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            if (draft.phase == FollowUpPhase.provisional)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text('Sem cadeia de status.'),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final status in prosthesisFollowUpStatusOrder)
+                      ChoiceChip(
+                        showCheckmark: false,
+                        label: Text(prosthesisFollowUpStatusLabel(status)),
+                        selected: draft.prosthesisStatus == status,
+                        onSelected: (_) => viewModel.setProsthesisFollowUpStatus(draft.id, status),
+                      ),
+                  ],
+                ),
+              ),
+              for (final status in prosthesisFollowUpStatusOrder)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: Text(prosthesisFollowUpStatusLabel(status)),
+                  subtitle: Text(
+                    draft.statusDates[status.name] == null
+                        ? 'Data opcional'
+                        : formatDay(draft.statusDates[status.name]!),
+                  ),
+                  trailing: TextButton(
+                    onPressed: () async {
+                      final picked = await showAppDatePicker(
+                        context: context,
+                        initialDate: draft.statusDates[status.name] ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2040),
+                      );
+                      if (picked != null) {
+                        viewModel.setProsthesisStatusDate(draft.id, status, picked);
+                      }
+                    },
+                    child: const Text('Data'),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

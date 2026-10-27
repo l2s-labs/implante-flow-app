@@ -38,7 +38,7 @@ List<FollowUp> upcomingOf(List<Procedure> procedures, String patientId) {
   return [
     for (final procedure in proceduresOf(procedures, patientId))
       for (final followUp in procedure.followUps)
-        if (followUp.status == ReturnStatus.agendado) followUp,
+        if (!followUp.isProsthesisTrack && followUp.status == ReturnStatus.agendado) followUp,
   ]..sort((a, b) => a.date.compareTo(b.date));
 }
 
@@ -53,7 +53,7 @@ List<FollowUp> scheduledFollowUps(List<Procedure> procedures) {
   return [
     for (final procedure in procedures)
       for (final followUp in procedure.followUps)
-        if (followUp.status == ReturnStatus.agendado) followUp,
+        if (!followUp.isProsthesisTrack && followUp.status == ReturnStatus.agendado) followUp,
   ]..sort((a, b) => a.date.compareTo(b.date));
 }
 
@@ -116,6 +116,7 @@ bool followUpMatchesReport(
   DateTime today, {
   ReportWindow window = const ReportWindow(),
 }) {
+  if (followUp.isProsthesisTrack) return false;
   if (!window.contains(followUp.date)) return false;
   final day = dateOnly(followUp.date);
   final current = dateOnly(today);
