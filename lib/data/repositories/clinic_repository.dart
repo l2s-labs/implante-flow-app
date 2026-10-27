@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../services/api_feedback.dart';
+import '../services/cep_lookup.dart';
 
 abstract class ClinicRepository {
   Stream<ClinicSnapshot> watch();
@@ -31,6 +32,11 @@ abstract class ClinicRepository {
 
   /// Atualiza fabricantes/modelos/tamanhos (e enxertos) a partir da API.
   Future<void> refreshCatalog() async {}
+
+  /// Consulta CEP na API interna (ADR-003 / L2S-68).
+  Future<CepAddress> lookupCep(String cep) async {
+    throw UnsupportedError('Consulta de CEP disponível apenas com a API.');
+  }
 
   Patient createPatient({
     required String name,
@@ -65,6 +71,17 @@ abstract class ClinicRepository {
     required String statusLabel,
     required ReturnStatus returnStatus,
   });
+
+  void updateProsthesisFollowUp({
+    required String followUpId,
+    required ProsthesisFollowUpStatus status,
+    DateTime? statusDate,
+  }) {}
+
+  void addProsthesisFollowUp({
+    required String procedureId,
+    required FollowUpPhase phase,
+  }) {}
 
   Future<Uint8List> issueCertificate(
     String procedureId, {

@@ -6,6 +6,7 @@ import '../../domain/clinic_snapshot.dart';
 import '../../domain/models.dart';
 import '../services/api_feedback.dart';
 import '../services/clinic_api.dart';
+import '../services/cep_lookup.dart';
 import '../services/clinic_files.dart';
 import '../services/clinical_catalog_codec.dart';
 import '../services/clinic_snapshot_codec.dart';
@@ -108,6 +109,11 @@ class ApiClinicRepository implements ClinicRepository {
       if (_token.isEmpty && _refreshToken == null) return;
       await _refreshCatalog(_epoch);
     });
+  }
+
+  @override
+  Future<CepAddress> lookupCep(String cep) {
+    return _authorized((token) => api.lookupCep(token, cep));
   }
 
   Future<void> _refreshCatalog(int epoch) async {
@@ -264,6 +270,37 @@ class ApiClinicRepository implements ClinicRepository {
       );
     }
   }
+
+  @override
+  void updateProsthesisFollowUp({
+    required String followUpId,
+    required ProsthesisFollowUpStatus status,
+    DateTime? statusDate,
+  }) {
+    _local.updateProsthesisFollowUp(
+      followUpId: followUpId,
+      status: status,
+      statusDate: statusDate,
+    );
+    final procedure = _procedureOfFollowUp(followUpId);
+    final followUp = procedure?.followUps.where((item) => item.id == followUpId).firstOrNull;
+    if (followUp != null) {
+      _enqueue(() => _authorized((token) => api.updateFollowUp(token, followUp)));
+    }
+  }
+
+  @override
+  void addProsthesisFollowUp({
+    required String procedureId,
+    required FollowUpPhase phase,
+  }) {
+    _local.addProsthesisFollowUp(procedureId: procedureId, phase: phase);
+    final procedure = current.procedures.where((item) => item.id == procedureId).firstOrNull;
+    if (procedure != null) {
+      _enqueue(() => _authorized((token) => api.updateProcedure(token, procedure)));
+    }
+  }
+
 
   @override
   Future<Uint8List> issueCertificate(

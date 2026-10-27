@@ -5,12 +5,14 @@ import 'dart:typed_data';
 import '../../domain/certificate.dart';
 import '../../domain/models.dart';
 import 'api_feedback.dart';
+import 'cep_lookup.dart';
 
 class ClinicApiException implements Exception {
-  const ClinicApiException(this.statusCode, this.message);
+  const ClinicApiException(this.statusCode, this.message, {this.code});
 
   final int statusCode;
   final String message;
+  final String? code;
 
   @override
   String toString() => message;
@@ -51,6 +53,26 @@ class ClinicApi {
 
   Future<Map<String, dynamic>> fetchGraftCatalog(String token) async {
     return _object(await _send('GET', '/v1/catalog/grafts', token: token));
+  }
+
+  /// `GET /v1/ceps/:cep` — app nunca chama ViaCEP. Erros: `{ error: { code, message, requestId } }`.
+  Future<CepAddress> lookupCep(String token, String cep) async {
+    final digits = cep.replaceAll(RegExp(r'\D'), '');
+    final response = await _transport.send(
+      method: 'GET',
+      path: '/v1/ceps/$digits',
+      token: token,
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return CepAddress.fromJson(_object(response.body));
+    }
+    final code = apiErrorCode(response.body);
+    final message = friendlyApiMessage(response.statusCode, body: response.body);
+    throw ClinicApiException(
+      response.statusCode,
+      cepErrorMessage(statusCode: response.statusCode, code: code, fallback: message),
+      code: code,
+    );
   }
 
   Future<void> createPatient(String token, Patient patient) async {
@@ -115,7 +137,18 @@ class ClinicApi {
       'PATCH',
       '/v1/follow-ups/${followUp.id}',
       token: token,
-      body: {'status': followUp.status.name},
+      body: followUp.isProsthesisTrack
+          ? {
+              if (followUp.phase != null) 'phase': followUp.phase!.name,
+              if (followUp.phase == FollowUpPhase.definitive) ...{
+                'status': followUp.prosthesisStatus?.name,
+                'status_dates': {
+                  for (final entry in followUp.statusDates.entries)
+                    entry.key: entry.value == null ? null : _isoDate(entry.value!),
+                },
+              },
+            }
+          : {'status': followUp.status.name},
     );
   }
 
@@ -269,6 +302,7 @@ class ClinicApi {
       throw ClinicApiException(
         response.statusCode,
         friendlyApiMessage(response.statusCode, body: response.body),
+        code: apiErrorCode(response.body),
       );
     }
     return response.body;
@@ -372,6 +406,14 @@ Map<String, Object?> _procedureBody(Procedure procedure, {required bool includeI
               'reason': followUp.reason.name,
               'reminderEnabled': followUp.reminderEnabled,
               'reminderDaysBefore': followUp.reminderDaysBefore,
+              if (followUp.phase != null) 'phase': followUp.phase!.name,
+              if (followUp.phase == FollowUpPhase.definitive) ...{
+                'status': followUp.prosthesisStatus?.name,
+                'status_dates': {
+                  for (final entry in followUp.statusDates.entries)
+                    entry.key: entry.value == null ? null : _isoDate(entry.value!),
+                },
+              },
             },
         ],
       'statusLabel': clinicalStatusWire(procedure.statusLabel, procedure.modality),
