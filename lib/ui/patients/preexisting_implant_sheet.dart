@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/date_picker.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/models.dart';
@@ -128,7 +129,7 @@ class _PreexistingImplantSheetState extends State<_PreexistingImplantSheet> {
             subtitle: Text(installedOn == null ? 'Não informada' : formatDay(installedOn!)),
             trailing: TextButton(
               onPressed: () async {
-                final picked = await showDatePicker(
+                final picked = await showAppDatePicker(
                   context: context,
                   initialDate: installedOn ?? DateTime.now(),
                   firstDate: DateTime(1990),

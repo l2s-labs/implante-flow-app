@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'config/app_config.dart';
@@ -13,6 +14,7 @@ import 'domain/clinic_snapshot.dart';
 import 'domain/models.dart';
 import 'routing/router.dart';
 import 'ui/core/api_feedback_host.dart';
+import 'ui/core/date_picker.dart';
 import 'ui/core/app_safe_area.dart';
 import 'ui/core/layout.dart';
 import 'ui/view_models.dart';
@@ -84,6 +86,14 @@ class _ImplateAppState extends State<ImplateApp> {
       title: 'implante flow',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      // L2S-69: app e DatePickers em PT-BR (mesmo se o aparelho estiver em outro idioma).
+      locale: kAppLocalePtBr,
+      supportedLocales: const [kAppLocalePtBr],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       builder: (context, child) {
         return ApiFeedbackHost(
           child: AppSafeArea(child: child ?? const SizedBox.shrink()),

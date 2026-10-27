@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/date_picker.dart';
 
 import '../../domain/models.dart';
 import '../core/catalog_scope.dart';
@@ -299,7 +300,7 @@ Future<void> _pickDate(
   DateTime? current,
   ValueChanged<DateTime> onPicked,
 ) async {
-  final picked = await showDatePicker(
+  final picked = await showAppDatePicker(
     context: context,
     initialDate: current ?? DateTime.now(),
     firstDate: DateTime(2020),

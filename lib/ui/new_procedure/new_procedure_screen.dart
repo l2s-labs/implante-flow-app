@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/date_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -800,7 +801,7 @@ class _DateTile extends StatelessWidget {
 }
 
 Future<void> _pickDate(BuildContext context, DateTime current, ValueChanged<DateTime> onPicked) async {
-  final picked = await showDatePicker(
+  final picked = await showAppDatePicker(
     context: context,
     initialDate: current,
     firstDate: DateTime(2020),
