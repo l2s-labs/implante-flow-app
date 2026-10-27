@@ -28,7 +28,10 @@ class PatientScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              TextButton(onPressed: () => context.pop(), child: const Text('Voltar')),
+              TextButton(
+                onPressed: () => context.pop(),
+                child: const Text('Voltar'),
+              ),
             ],
           ),
         ),
@@ -70,11 +73,21 @@ class PatientScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(patient.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  patient.name,
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 8),
-                Text(patient.phone.isEmpty ? 'Sem telefone' : formatBrazilianPhone(patient.phone)),
+                Text(
+                  patient.phone.isEmpty
+                      ? 'Sem telefone'
+                      : formatBrazilianPhone(patient.phone),
+                ),
                 Text(patient.email.isEmpty ? 'Sem e-mail' : patient.email),
-                Text(_locationLine(patient, viewModel.snapshot.profile.locations)),
+                Text(
+                  _locationLine(patient, viewModel.snapshot.profile.locations),
+                ),
                 Text(_noticeLine(patient)),
                 Text(cpfLabel(patient.cpf)),
                 Text('Nascimento ${formatDay(patient.birthDate)}'),
@@ -88,10 +101,32 @@ class PatientScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const AppSectionHeader(
-            title: 'Implantes instalados',
-            subtitle: 'Peças no dente (FDI). Não é o histórico de atos clínicos.',
-          ),
+          const AppSectionHeader(title: 'Próximos encontros'),
+          const SizedBox(height: 8),
+          if (upcoming.isEmpty)
+            const AppEmptyHint('Nenhum retorno agendado.')
+          else
+            for (final followUp in upcoming) ...[
+              AppSurfaceCard(
+                child: ListTile(
+                  title: Text(formatDay(followUp.date)),
+                  subtitle: Text(
+                    followUp.reason == ReturnReason.sutura
+                        ? returnReasonLabel(followUp.reason)
+                        : '${returnReasonLabel(followUp.reason)} · lembrete ${followUp.reminderEnabled ? reminderLeadLabel(followUp.reminderDaysBefore) : 'desligado'}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final procedure = viewModel.procedureOf(followUp.id);
+                    if (procedure == null) return;
+                    context.push('/procedures/${procedure.id}');
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          const SizedBox(height: 12),
+          const AppSectionHeader(title: 'Implantes instalados'),
           const SizedBox(height: 8),
           if (implants.isEmpty)
             const AppEmptyHint('Nenhum implante cadastrado.')
@@ -133,35 +168,7 @@ class PatientScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const AppSectionHeader(title: 'Próximos encontros'),
-          const SizedBox(height: 8),
-          if (upcoming.isEmpty)
-            const AppEmptyHint('Nenhum retorno agendado.')
-          else
-            for (final followUp in upcoming) ...[
-              AppSurfaceCard(
-                child: ListTile(
-                  title: Text(formatDay(followUp.date)),
-                  subtitle: Text(
-                    followUp.reason == ReturnReason.sutura
-                        ? returnReasonLabel(followUp.reason)
-                        : '${returnReasonLabel(followUp.reason)} · lembrete ${followUp.reminderEnabled ? reminderLeadLabel(followUp.reminderDaysBefore) : 'desligado'}',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    final procedure = viewModel.procedureOf(followUp.id);
-                    if (procedure == null) return;
-                    context.push('/procedures/${procedure.id}');
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          const SizedBox(height: 12),
-          const AppSectionHeader(
-            title: 'Procedimentos',
-            subtitle: 'Atos clínicos no tempo (instalação, enxerto, prótese, reabertura…).',
-          ),
+          const AppSectionHeader(title: 'Procedimentos'),
           const SizedBox(height: 8),
           if (procedures.isEmpty)
             const AppEmptyHint('Nenhum procedimento cadastrado.')
