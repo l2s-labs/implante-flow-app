@@ -113,6 +113,11 @@ class ClinicApi {
     );
   }
 
+  /// L2S-70 / L2S-73: soft delete. 204 = ok; 403/404 = indisponível.
+  Future<void> deleteProcedure(String token, String procedureId) async {
+    await _send('DELETE', '/v1/procedures/$procedureId', token: token);
+  }
+
   Future<void> recordVisit(
     String token,
     String procedureId,

@@ -57,6 +57,9 @@ abstract class ClinicRepository {
 
   void updateProcedure(Procedure procedure);
 
+  /// Soft-delete do procedimento (API DELETE → 204). Local some da lista na hora.
+  Future<void> deleteProcedure(String procedureId);
+
   void addPhoto(String procedureId, ClinicPhoto photo);
 
   void addVisit({
