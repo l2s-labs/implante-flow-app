@@ -99,6 +99,7 @@ class ApiClinicRepository implements ClinicRepository {
       final chart = await _authorized(api.fetchChart);
       if (epoch != _epoch) return;
       _applyChart(chart);
+      await _mergeProsthesisFollowUps(epoch);
       await _refreshCatalog(epoch);
     });
   }
@@ -188,7 +189,10 @@ class ApiClinicRepository implements ClinicRepository {
     _local.saveProcedures(created);
     for (final procedure in created) {
       _enqueue(
-        () => _authorized((token) => api.createProcedure(token, procedure)),
+        () => _authorized((token) async {
+          await api.createProcedure(token, procedure);
+          await _syncProsthesisFollowUps(token, procedure);
+        }),
         success: 'Procedimento salvo com sucesso.',
       );
     }
@@ -311,9 +315,19 @@ class ApiClinicRepository implements ClinicRepository {
     );
     final procedure = _procedureOfFollowUp(followUpId);
     final followUp = procedure?.followUps.where((item) => item.id == followUpId).firstOrNull;
-    if (followUp != null) {
-      _enqueue(() => _authorized((token) => api.updateFollowUp(token, followUp)));
-    }
+    if (procedure == null || followUp == null || followUp.phase == null) return;
+    final phase = followUp.phase!;
+    _enqueue(
+      () => _authorized(
+        (token) => api.patchProsthesisFollowUpStatus(
+          token,
+          procedure.id,
+          phase,
+          status: status,
+          statusAt: statusDate,
+        ),
+      ),
+    );
   }
 
   @override
@@ -323,9 +337,23 @@ class ApiClinicRepository implements ClinicRepository {
   }) {
     _local.addProsthesisFollowUp(procedureId: procedureId, phase: phase);
     final procedure = current.procedures.where((item) => item.id == procedureId).firstOrNull;
-    if (procedure != null) {
-      _enqueue(() => _authorized((token) => api.updateProcedure(token, procedure)));
-    }
+    if (procedure == null) return;
+    final followUp = procedure.followUps
+        .where((item) => item.isProsthesisTrack && item.phase == phase)
+        .lastOrNull;
+    _enqueue(
+      () => _authorized(
+        (token) => api.upsertProsthesisFollowUp(
+          token,
+          procedureId,
+          phase,
+          status: followUp?.prosthesisStatus,
+          statusAt: followUp?.prosthesisStatus == null
+              ? null
+              : followUp!.statusDates[followUp.prosthesisStatus!.name],
+        ),
+      ),
+    );
   }
 
 
@@ -525,9 +553,65 @@ class ApiClinicRepository implements ClinicRepository {
       final chart = await _authorized(api.fetchChart);
       if (epoch != _epoch) return;
       _applyChart(chart);
+      await _mergeProsthesisFollowUps(epoch);
     } catch (_) {
       // The first failure is already reported.
     }
+  }
+
+  Future<void> _syncProsthesisFollowUps(String token, Procedure procedure) async {
+    if (procedure.modality != Modality.protese) return;
+    for (final followUp in procedure.followUps) {
+      if (!followUp.isProsthesisTrack || followUp.phase == null) continue;
+      final phase = followUp.phase!;
+      final status = phase == FollowUpPhase.definitive ? followUp.prosthesisStatus : null;
+      final statusAt = status == null ? null : followUp.statusDates[status.name];
+      await api.upsertProsthesisFollowUp(
+        token,
+        procedure.id,
+        phase,
+        status: status,
+        statusAt: statusAt,
+      );
+    }
+  }
+
+  /// Chart não traz prótese — GET dedicado e mescla no snapshot local.
+  Future<void> _mergeProsthesisFollowUps(int epoch) async {
+    final proteseIds = [
+      for (final procedure in _local.current.procedures)
+        if (procedure.modality == Modality.protese) procedure.id,
+    ];
+    if (proteseIds.isEmpty) return;
+    final byProcedure = <String, List<FollowUp>>{};
+    for (final procedureId in proteseIds) {
+      if (epoch != _epoch) return;
+      try {
+        final rows = await _authorized(
+          (token) => api.listProsthesisFollowUps(token, procedureId),
+        );
+        byProcedure[procedureId] = [
+          for (final row in rows) followUpFromProsthesisWire(row),
+        ];
+      } catch (_) {
+        // Mantém track local se o GET falhar.
+      }
+    }
+    if (epoch != _epoch || byProcedure.isEmpty) return;
+    final procedures = [
+      for (final procedure in _local.current.procedures)
+        if (byProcedure.containsKey(procedure.id))
+          procedure.copyWith(
+            followUps: chronologicalFollowUps([
+              for (final followUp in procedure.followUps)
+                if (!followUp.isProsthesisTrack) followUp,
+              ...?byProcedure[procedure.id],
+            ]),
+          )
+        else
+          procedure,
+    ];
+    _local.replaceSnapshot(_local.current.copyWith(procedures: procedures));
   }
 }
 
