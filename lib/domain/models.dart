@@ -56,15 +56,13 @@ enum ReturnStatus { agendado, realizado, faltou }
 /// Fase do follow-up de prótese (ADR-003 / L2S-71).
 enum FollowUpPhase { provisional, definitive }
 
-/// Cadeia de status do follow-up definitivo de prótese (ADR-003).
-// ADR-003 wire names (snake_case).
-// ignore: constant_identifier_names
-enum ProsthesisFollowUpStatus { molded, sent_to_lab, returned_from_lab, installed }
+/// Cadeia de status do follow-up definitivo de prótese (L2S-74 wire EN camelCase).
+enum ProsthesisFollowUpStatus { molded, sentToLab, returnedFromLab, installed }
 
 const prosthesisFollowUpStatusOrder = <ProsthesisFollowUpStatus>[
   ProsthesisFollowUpStatus.molded,
-  ProsthesisFollowUpStatus.sent_to_lab,
-  ProsthesisFollowUpStatus.returned_from_lab,
+  ProsthesisFollowUpStatus.sentToLab,
+  ProsthesisFollowUpStatus.returnedFromLab,
   ProsthesisFollowUpStatus.installed,
 ];
 
@@ -366,10 +364,52 @@ String followUpPhaseLabel(FollowUpPhase phase) => switch (phase) {
 
 String prosthesisFollowUpStatusLabel(ProsthesisFollowUpStatus status) => switch (status) {
       ProsthesisFollowUpStatus.molded => 'Moldado',
-      ProsthesisFollowUpStatus.sent_to_lab => 'Enviado ao laboratório',
-      ProsthesisFollowUpStatus.returned_from_lab => 'Retorno do laboratório',
+      ProsthesisFollowUpStatus.sentToLab => 'Enviado ao laboratório',
+      ProsthesisFollowUpStatus.returnedFromLab => 'Retorno do laboratório',
       ProsthesisFollowUpStatus.installed => 'Instalada',
     };
+
+/// Wire L2S-74 (+ legado snake_case local).
+ProsthesisFollowUpStatus? parseProsthesisFollowUpStatus(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  switch (raw) {
+    case 'molded':
+    case 'moldado':
+      return ProsthesisFollowUpStatus.molded;
+    case 'sentToLab':
+    case 'sent_to_lab':
+    case 'enviadoLaboratorio':
+      return ProsthesisFollowUpStatus.sentToLab;
+    case 'returnedFromLab':
+    case 'returned_from_lab':
+    case 'retornoLaboratorio':
+      return ProsthesisFollowUpStatus.returnedFromLab;
+    case 'installed':
+    case 'instalada':
+      return ProsthesisFollowUpStatus.installed;
+    default:
+      return null;
+  }
+}
+
+FollowUpPhase? parseFollowUpPhase(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  switch (raw) {
+    case 'provisional':
+    case 'provisorio':
+      return FollowUpPhase.provisional;
+    case 'definitive':
+    case 'definitivo':
+      return FollowUpPhase.definitive;
+    default:
+      return null;
+  }
+}
+
+/// Chave de statusDates: aceita wire atual e legado snake_case.
+String normalizeProsthesisStatusDateKey(String key) {
+  return parseProsthesisFollowUpStatus(key)?.name ?? key;
+}
 
 const defaultReminderDaysBefore = 15;
 
@@ -813,7 +853,7 @@ class FollowUp {
   final FollowUpPhase? phase;
   final ProsthesisFollowUpStatus? prosthesisStatus;
 
-  /// Datas opcionais por status do definitivo (`status.name` → dia).
+  /// Datas opcionais por status do definitivo (chave = wire EN, ex. `sentToLab`).
   final Map<String, DateTime?> statusDates;
 
   bool get isProsthesisTrack => phase != null;
