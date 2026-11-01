@@ -27,7 +27,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   # Alinhado a flutter.ndkVersion (Flutter 3.47.7).
@@ -43,12 +43,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: ${{ inputs.environment_name }}
+    permissions:
+      # Bump no pubspec (push em stage) e publicação da release.
+      contents: write
     steps:
       - name: Baixa o código
         uses: actions/checkout@v4
         with:
           # Precisa persistir credenciais para o bump commit/push em stage.
+          # Histórico completo + tags: o changelog compara com o release anterior.
           fetch-depth: 0
+          fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepara o Java
@@ -152,10 +157,27 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Versão canônica=${version} | build=${display_name}+${build_number} | release=${release_version}"
 
+      - name: Gera o changelog
+        # Só o fluxo Publicar APK (canal dev) ganha changelog + guard (L2S-82).
+        if: inputs.channel == 'dev'
+        id: changelog
+        env:
+          # SHA do tip (antes do bump); nunca interpolar mensagens de commit no script.
+          TIP_SHA: ${{ github.sha }}
+          CURRENT_TAG: apk-dev-${{ steps.version.outputs.tag_safe }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet origin || true
+          bash .github/scripts/changelog-apk.sh "$TIP_SHA" > "$RUNNER_TEMP/changelog.md"
+          cat "$RUNNER_TEMP/changelog.md"
+
       - name: Commita o bump no pubspec
-        if: inputs.bump_version
+        id: bump
+        # Sem bump em PR nem quando não há commits além de bumps desde o último release.
+        if: inputs.bump_version && github.event_name != 'pull_request' && steps.changelog.outputs.has_changes != 'false'
         env:
           BRANCH: ${{ github.ref_name }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           if git diff --quiet -- pubspec.yaml; then
@@ -165,8 +187,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pubspec.yaml
-          git commit -m "chore(release): bump ${{ steps.version.outputs.version }} [skip ci]"
+          git commit -m "chore(release): bump ${NEW_VERSION} [skip ci]"
           git push origin "HEAD:${BRANCH}"
+          # A tag da release aponta para o commit de bump recém-publicado na stage.
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Grava a configuração de compilação
         env:
@@ -174,10 +198,11 @@ jobs:
           WORKOS_REDIRECT_URI: ${{ secrets.WORKOS_REDIRECT_URI }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           CHANNEL: ${{ inputs.channel }}
+          ENVIRONMENT_NAME: ${{ inputs.environment_name }}
         run: |
           set -euo pipefail
           if [ -z "$WORKOS_CLIENT_ID" ] || [ -z "$API_BASE_URL" ]; then
-            echo "Defina WORKOS_CLIENT_ID e API_BASE_URL no environment ${{ inputs.environment_name }} (ou nos secrets do repositório)."
+            echo "Defina WORKOS_CLIENT_ID e API_BASE_URL no environment ${ENVIRONMENT_NAME} (ou nos secrets do repositório)."
             exit 1
           fi
           case "$API_BASE_URL" in
@@ -256,7 +281,10 @@ jobs:
             --dart-define-from-file=config/local.json
 
       - name: Publica a release
+        if: github.event_name != 'pull_request' && steps.changelog.outputs.has_changes != 'false'
         env:
+          # Commit do bump (se houve) ou o tip; nunca main.
+          TARGET_SHA: ${{ steps.bump.outputs.sha || github.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHANNEL: ${{ inputs.channel }}
           PRERELEASE: ${{ inputs.prerelease }}
@@ -276,39 +304,47 @@ jobs:
 
           if [ "$CHANNEL" = "dev" ]; then
             package="implate-flow-${safe}.apk"
-            title="Implate Flow ${release_version} (desenvolvimento)"
+            title="Implante Flow ${release_version} (desenvolvimento)"
             tag="apk-dev-${tag_safe}"
           else
             package="implate-flow-${safe}.apk"
-            title="Implate Flow ${release_version}"
+            title="Implante Flow ${release_version}"
             tag="v${tag_safe}"
           fi
           cp build/app/outputs/flutter-apk/app-release.apk "$package"
 
-          notes="$(printf '%s\n' \
-            "APK **${CHANNEL}** para instalação direta." \
-            "" \
-            "APP_VERSION=${version}" \
-            "RELEASE_VERSION=${release_version}" \
-            "" \
-            "- Versão: \`${release_version}\`" \
-            "- Canônica: \`${version}\`" \
-            "- Canal: \`${CHANNEL}\`" \
-            "- Environment: \`${ENVIRONMENT_NAME}\`" \
-            "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment." \
-            "- Atualizações seguintes precisam do mesmo keystore.")"
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          {
+            if [ -s "$RUNNER_TEMP/changelog.md" ]; then
+              cat "$RUNNER_TEMP/changelog.md"
+              echo ""
+            fi
+            echo "## Build"
+            echo ""
+            echo "APK **${CHANNEL}** para instalação direta."
+            echo ""
+            echo "APP_VERSION=${version}"
+            echo "RELEASE_VERSION=${release_version}"
+            echo ""
+            echo "- Versão: \`${release_version}\`"
+            echo "- Canônica: \`${version}\`"
+            echo "- Canal: \`${CHANNEL}\`"
+            echo "- Environment: \`${ENVIRONMENT_NAME}\`"
+            echo "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment."
+            echo "- Atualizações seguintes precisam do mesmo keystore."
+          } > "$notes_file"
 
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$package" version.txt --clobber
             if [ "$PRERELEASE" = "true" ]; then
-              gh release edit "$tag" --title "$title" --notes "$notes" --prerelease
+              gh release edit "$tag" --title "$title" --notes-file "$notes_file" --prerelease
             else
-              gh release edit "$tag" --title "$title" --notes "$notes" --prerelease=false
+              gh release edit "$tag" --title "$title" --notes-file "$notes_file" --prerelease=false
             fi
           elif [ "$PRERELEASE" = "true" ]; then
-            gh release create "$tag" "$package" version.txt --title "$title" --notes "$notes" --prerelease
+            gh release create "$tag" "$package" version.txt --target "$TARGET_SHA" --title "$title" --notes-file "$notes_file" --prerelease
           else
-            gh release create "$tag" "$package" version.txt --title "$title" --notes "$notes"
+            gh release create "$tag" "$package" version.txt --target "$TARGET_SHA" --title "$title" --notes-file "$notes_file"
           fi
 
           echo "Release: ${tag}"
