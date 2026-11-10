@@ -15,6 +15,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "br.com.implateflow.implate_flow"
+    buildFeatures { resValues = true }
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -25,7 +26,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "br.com.implateflow.implate_flow"
+        applicationId = "com.l2slabs.implanteflow"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = maxOf(26, flutter.minSdkVersion)
@@ -36,6 +37,23 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["authScheme"] = "com.l2slabs.implanteflow"
+        resValue("string", "app_name", "implante flow")
+        resValue("string", "auth_scheme", "com.l2slabs.implanteflow")
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("production") {
+            dimension = "environment"
+        }
+        create("develop") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["authScheme"] = "com.l2slabs.implanteflow.dev"
+            resValue("string", "app_name", "implante flow dev")
+            resValue("string", "auth_scheme", "com.l2slabs.implanteflow.dev")
+        }
     }
 
     signingConfigs {

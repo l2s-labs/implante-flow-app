@@ -71,7 +71,7 @@ class WorkOsSignIn(
     }
 
     fun handleRedirect(uri: Uri?) {
-        if (uri == null || uri.scheme != "br.com.implateflow" || uri.host != "auth") return
+        if (uri == null || uri.scheme != context.getString(R.string.auth_scheme) || uri.host != "auth") return
         if (signingOut) {
             finishSignOut()
             return

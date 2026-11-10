@@ -195,7 +195,6 @@ jobs:
       - name: Grava a configuração de compilação
         env:
           WORKOS_CLIENT_ID: ${{ secrets.WORKOS_CLIENT_ID }}
-          WORKOS_REDIRECT_URI: ${{ secrets.WORKOS_REDIRECT_URI }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           CHANNEL: ${{ inputs.channel }}
           ENVIRONMENT_NAME: ${{ inputs.environment_name }}
@@ -226,7 +225,11 @@ jobs:
                 ;;
             esac
           fi
-          redirect="${WORKOS_REDIRECT_URI:-br.com.implateflow://auth/callback}"
+          if [ "$CHANNEL" = "dev" ]; then
+            redirect="com.l2slabs.implanteflow.dev://auth/callback"
+          else
+            redirect="com.l2slabs.implanteflow://auth/callback"
+          fi
           jq -n \
             --arg client "$WORKOS_CLIENT_ID" \
             --arg redirect "$redirect" \
@@ -273,9 +276,11 @@ jobs:
         env:
           BUILD_NAME: ${{ steps.version.outputs.build_name }}
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
-          flutter build apk --release \
+          if [ "$CHANNEL" = "dev" ]; then flavor=develop; else flavor=production; fi
+          flutter build apk --release --flavor "$flavor" \
             --build-name="$BUILD_NAME" \
             --build-number="$BUILD_NUMBER" \
             --dart-define-from-file=config/local.json
@@ -311,7 +316,8 @@ jobs:
             title="Implante Flow ${release_version}"
             tag="v${tag_safe}"
           fi
-          cp build/app/outputs/flutter-apk/app-release.apk "$package"
+          if [ "$CHANNEL" = "dev" ]; then flavor=develop; else flavor=production; fi
+          cp "build/app/outputs/flutter-apk/app-${flavor}-release.apk" "$package"
 
           notes_file="$RUNNER_TEMP/release-notes.md"
           {
@@ -330,7 +336,7 @@ jobs:
             echo "- Canônica: \`${version}\`"
             echo "- Canal: \`${CHANNEL}\`"
             echo "- Environment: \`${ENVIRONMENT_NAME}\`"
-            echo "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment."
+            echo "- O client ID do WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment."
             echo "- Atualizações seguintes precisam do mesmo keystore."
           } > "$notes_file"
 
