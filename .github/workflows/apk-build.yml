@@ -178,19 +178,27 @@ jobs:
         env:
           BRANCH: ${{ github.ref_name }}
           NEW_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_HEAD: ${{ github.sha }}
         run: |
           set -euo pipefail
           if git diff --quiet -- pubspec.yaml; then
             echo "pubspec.yaml sem alteração de versão."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pubspec.yaml
-          git commit -m "chore(release): bump ${NEW_VERSION} [skip ci]"
-          git push origin "HEAD:${BRANCH}"
-          # A tag da release aponta para o commit de bump recém-publicado na stage.
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # A API cria um commit assinado pelo GitHub e recusa branches alteradas em paralelo.
+          contents="$(base64 < pubspec.yaml | tr -d '\n')"
+          jq -n \
+            --arg query 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }' \
+            --arg repository "$REPOSITORY" --arg branch "$BRANCH" \
+            --arg head "$EXPECTED_HEAD" --arg contents "$contents" \
+            --arg message "chore(release): bump ${NEW_VERSION} [skip ci]" \
+            '{query:$query, variables:{input:{branch:{repositoryNameWithOwner:$repository,branchName:$branch},expectedHeadOid:$head,message:{headline:$message},fileChanges:{additions:[{path:"pubspec.yaml",contents:$contents}]}}}}' \
+            > "$RUNNER_TEMP/bump-commit.json"
+          sha="$(gh api graphql --input "$RUNNER_TEMP/bump-commit.json" --jq '.data.createCommitOnBranch.commit.oid')"
+          [ -n "$sha" ] && [ "$sha" != null ]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Grava a configuração de compilação
         env:
