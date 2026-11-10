@@ -38,7 +38,7 @@ class MainActivity : FlutterActivity() {
                 "signOut" -> {
                     val returnTo = call.argument<String>("redirectUri").orEmpty()
                     if (returnTo.isEmpty()) {
-                        signIn.signOut(returnTo = "br.com.implateflow://auth/callback", result = result)
+                        signIn.signOut(returnTo = "${getString(R.string.auth_scheme)}://auth/callback", result = result)
                     } else {
                         signIn.signOut(returnTo = returnTo, result = result)
                     }
@@ -76,7 +76,7 @@ class MainActivity : FlutterActivity() {
 
     private fun consumeRedirect(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme != "br.com.implateflow" || uri.host != "auth") return
+        if (uri.scheme != getString(R.string.auth_scheme) || uri.host != "auth") return
         cancelAbandon()
         browserOpen = false
         if (::signIn.isInitialized) {

@@ -2,6 +2,12 @@
 
 Prontuário na nuvem para um implantodontista acompanhar implantes, enxertos, retornos e a procedência de cada peça. Este repositório é o aplicativo Flutter para Android e iOS. A API e a versão web ficam em outros repositórios.
 
+### Variantes Android
+
+Os APKs `develop` e `production` podem ser instalados juntos. Produção usa o identificador `com.l2slabs.implanteflow`; desenvolvimento usa o sufixo `.dev` e o ícone próprio. Os dados locais são independentes. A mudança de identificador em relação às versões anteriores exige uma nova instalação: o Android não transfere seus dados locais automaticamente.
+
+Para executar desenvolvimento localmente, use `flutter run --flavor develop --dart-define-from-file=config/develop.json`, configurando nesse arquivo `WORKOS_REDIRECT_URI` como `com.l2slabs.implanteflow.dev://auth/callback`. Produção usa `--flavor production` e `com.l2slabs.implanteflow://auth/callback`. Cadastre cada endereço no respectivo ambiente do WorkOS antes de testar o login. A pipeline define os redirects automaticamente.
+
 O dentista entra com a própria conta e vê os dados em mais de um aparelho. O paciente não acessa o sistema. Clínica com equipe e SSO ficam para a versão seguinte.
 
 ## Problema

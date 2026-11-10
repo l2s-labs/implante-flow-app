@@ -7,7 +7,7 @@ class AppConfig {
 
   static const workOsRedirectUri = String.fromEnvironment(
     'WORKOS_REDIRECT_URI',
-    defaultValue: 'br.com.implateflow://auth/callback',
+    defaultValue: 'com.l2slabs.implanteflow://auth/callback',
   );
 
   static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');

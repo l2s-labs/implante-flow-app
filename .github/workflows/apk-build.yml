@@ -178,24 +178,31 @@ jobs:
         env:
           BRANCH: ${{ github.ref_name }}
           NEW_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_HEAD: ${{ github.sha }}
         run: |
           set -euo pipefail
           if git diff --quiet -- pubspec.yaml; then
             echo "pubspec.yaml sem alteração de versão."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pubspec.yaml
-          git commit -m "chore(release): bump ${NEW_VERSION} [skip ci]"
-          git push origin "HEAD:${BRANCH}"
-          # A tag da release aponta para o commit de bump recém-publicado na stage.
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # A API cria um commit assinado pelo GitHub e recusa branches alteradas em paralelo.
+          contents="$(base64 < pubspec.yaml | tr -d '\n')"
+          jq -n \
+            --arg query 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }' \
+            --arg repository "$REPOSITORY" --arg branch "$BRANCH" \
+            --arg head "$EXPECTED_HEAD" --arg contents "$contents" \
+            --arg message "chore(release): bump ${NEW_VERSION} [skip ci]" \
+            '{query:$query, variables:{input:{branch:{repositoryNameWithOwner:$repository,branchName:$branch},expectedHeadOid:$head,message:{headline:$message},fileChanges:{additions:[{path:"pubspec.yaml",contents:$contents}]}}}}' \
+            > "$RUNNER_TEMP/bump-commit.json"
+          sha="$(gh api graphql --input "$RUNNER_TEMP/bump-commit.json" --jq '.data.createCommitOnBranch.commit.oid')"
+          [ -n "$sha" ] && [ "$sha" != null ]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Grava a configuração de compilação
         env:
           WORKOS_CLIENT_ID: ${{ secrets.WORKOS_CLIENT_ID }}
-          WORKOS_REDIRECT_URI: ${{ secrets.WORKOS_REDIRECT_URI }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           CHANNEL: ${{ inputs.channel }}
           ENVIRONMENT_NAME: ${{ inputs.environment_name }}
@@ -226,7 +233,11 @@ jobs:
                 ;;
             esac
           fi
-          redirect="${WORKOS_REDIRECT_URI:-br.com.implateflow://auth/callback}"
+          if [ "$CHANNEL" = "dev" ]; then
+            redirect="com.l2slabs.implanteflow.dev://auth/callback"
+          else
+            redirect="com.l2slabs.implanteflow://auth/callback"
+          fi
           jq -n \
             --arg client "$WORKOS_CLIENT_ID" \
             --arg redirect "$redirect" \
@@ -273,9 +284,11 @@ jobs:
         env:
           BUILD_NAME: ${{ steps.version.outputs.build_name }}
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
-          flutter build apk --release \
+          if [ "$CHANNEL" = "dev" ]; then flavor=develop; else flavor=production; fi
+          flutter build apk --release --flavor "$flavor" \
             --build-name="$BUILD_NAME" \
             --build-number="$BUILD_NUMBER" \
             --dart-define-from-file=config/local.json
@@ -311,7 +324,8 @@ jobs:
             title="Implante Flow ${release_version}"
             tag="v${tag_safe}"
           fi
-          cp build/app/outputs/flutter-apk/app-release.apk "$package"
+          if [ "$CHANNEL" = "dev" ]; then flavor=develop; else flavor=production; fi
+          cp "build/app/outputs/flutter-apk/app-${flavor}-release.apk" "$package"
 
           notes_file="$RUNNER_TEMP/release-notes.md"
           {
@@ -330,7 +344,7 @@ jobs:
             echo "- Canônica: \`${version}\`"
             echo "- Canal: \`${CHANNEL}\`"
             echo "- Environment: \`${ENVIRONMENT_NAME}\`"
-            echo "- WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment."
+            echo "- O client ID do WorkOS e \`API_BASE_URL\` vieram dos secrets deste environment."
             echo "- Atualizações seguintes precisam do mesmo keystore."
           } > "$notes_file"
 
