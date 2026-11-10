@@ -10,6 +10,7 @@ import '../data/services/clinic_pdfs.dart';
 import '../data/services/workos_auth.dart';
 import '../domain/certificate.dart';
 import '../domain/clinic_snapshot.dart';
+import '../data/services/cep_lookup.dart';
 import '../domain/models.dart';
 import '../domain/practice.dart';
 import '../domain/queries.dart';
@@ -594,10 +595,31 @@ class ProcedureViewModel extends RepositoryViewModel {
     );
   }
 
+  void updateProsthesisFollowUp({
+    required String followUpId,
+    required ProsthesisFollowUpStatus status,
+    DateTime? statusDate,
+  }) {
+    repository.updateProsthesisFollowUp(
+      followUpId: followUpId,
+      status: status,
+      statusDate: statusDate,
+    );
+  }
+
+  void addProsthesisFollowUp({required FollowUpPhase phase}) {
+    repository.addProsthesisFollowUp(procedureId: procedureId, phase: phase);
+  }
+
+
   void saveNotes(String notes) {
     final current = procedure;
     if (current == null) return;
     repository.updateProcedure(current.copyWith(notes: notes));
+  }
+
+  Future<void> deleteProcedure() {
+    return repository.deleteProcedure(procedureId);
   }
 
   void reprocessNotice(String noticeId) =>
@@ -680,6 +702,9 @@ class ProfileViewModel extends RepositoryViewModel {
   ProfileViewModel(super.repository);
 
   DentistProfile get profile => snapshot.profile;
+
+  Future<CepAddress> lookupCep(String cep) => repository.lookupCep(cep);
+
 
   void setName(String value) {
     final cleaned = sanitizePersonName(value);

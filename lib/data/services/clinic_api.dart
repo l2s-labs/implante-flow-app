@@ -5,12 +5,14 @@ import 'dart:typed_data';
 import '../../domain/certificate.dart';
 import '../../domain/models.dart';
 import 'api_feedback.dart';
+import 'cep_lookup.dart';
 
 class ClinicApiException implements Exception {
-  const ClinicApiException(this.statusCode, this.message);
+  const ClinicApiException(this.statusCode, this.message, {this.code});
 
   final int statusCode;
   final String message;
+  final String? code;
 
   @override
   String toString() => message;
@@ -53,6 +55,26 @@ class ClinicApi {
     return _object(await _send('GET', '/v1/catalog/grafts', token: token));
   }
 
+  /// `GET /v1/ceps/:cep` — app nunca chama ViaCEP. Erros: `{ error: { code, message, requestId } }`.
+  Future<CepAddress> lookupCep(String token, String cep) async {
+    final digits = cep.replaceAll(RegExp(r'\D'), '');
+    final response = await _transport.send(
+      method: 'GET',
+      path: '/v1/ceps/$digits',
+      token: token,
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return CepAddress.fromJson(_object(response.body));
+    }
+    final code = apiErrorCode(response.body);
+    final message = friendlyApiMessage(response.statusCode, body: response.body);
+    throw ClinicApiException(
+      response.statusCode,
+      cepErrorMessage(statusCode: response.statusCode, code: code, fallback: message),
+      code: code,
+    );
+  }
+
   Future<void> createPatient(String token, Patient patient) async {
     await _send('POST', '/v1/patients', token: token, body: _patientBody(patient));
     await _send(
@@ -91,6 +113,11 @@ class ClinicApi {
     );
   }
 
+  /// L2S-70 / L2S-73: soft delete. 204 = ok; 403/404 = indisponível.
+  Future<void> deleteProcedure(String token, String procedureId) async {
+    await _send('DELETE', '/v1/procedures/$procedureId', token: token);
+  }
+
   Future<void> recordVisit(
     String token,
     String procedureId,
@@ -111,11 +138,83 @@ class ClinicApi {
   }
 
   Future<void> updateFollowUp(String token, FollowUp followUp) async {
+    // Retornos clássicos only — prótese vai em /prosthesis-followups (L2S-74).
+    if (followUp.isProsthesisTrack) {
+      throw const ClinicApiException(
+        400,
+        'Follow-up de prótese usa /v1/procedures/:id/prosthesis-followups.',
+      );
+    }
     await _send(
       'PATCH',
       '/v1/follow-ups/${followUp.id}',
       token: token,
       body: {'status': followUp.status.name},
+    );
+  }
+
+  /// L2S-74: lista fases de follow-up de prótese.
+  Future<List<Map<String, dynamic>>> listProsthesisFollowUps(
+    String token,
+    String procedureId,
+  ) async {
+    final body = await _send(
+      'GET',
+      '/v1/procedures/$procedureId/prosthesis-followups',
+      token: token,
+    );
+    if (body is! List) {
+      throw const ClinicApiException(500, 'A API devolveu uma resposta inesperada.');
+    }
+    return [
+      for (final item in body)
+        if (item is Map<String, dynamic>)
+          item
+        else if (item is Map)
+          Map<String, dynamic>.from(item),
+    ];
+  }
+
+  /// L2S-74: upsert `provisional` | `definitive`.
+  Future<Map<String, dynamic>> upsertProsthesisFollowUp(
+    String token,
+    String procedureId,
+    FollowUpPhase phase, {
+    ProsthesisFollowUpStatus? status,
+    DateTime? statusAt,
+  }) async {
+    final body = <String, Object?>{
+      if (phase == FollowUpPhase.definitive && status != null) 'status': status.name,
+      if (phase == FollowUpPhase.definitive && statusAt != null) 'statusAt': _isoDate(statusAt),
+    };
+    return _object(
+      await _send(
+        'PUT',
+        '/v1/procedures/$procedureId/prosthesis-followups/${phase.name}',
+        token: token,
+        body: body,
+      ),
+    );
+  }
+
+  /// L2S-74: atualiza status da fase definitiva (skip OK).
+  Future<Map<String, dynamic>> patchProsthesisFollowUpStatus(
+    String token,
+    String procedureId,
+    FollowUpPhase phase, {
+    required ProsthesisFollowUpStatus status,
+    DateTime? statusAt,
+  }) async {
+    return _object(
+      await _send(
+        'PATCH',
+        '/v1/procedures/$procedureId/prosthesis-followups/${phase.name}',
+        token: token,
+        body: {
+          'status': status.name,
+          if (statusAt != null) 'statusAt': _isoDate(statusAt),
+        },
+      ),
     );
   }
 
@@ -269,6 +368,7 @@ class ClinicApi {
       throw ClinicApiException(
         response.statusCode,
         friendlyApiMessage(response.statusCode, body: response.body),
+        code: apiErrorCode(response.body),
       );
     }
     return response.body;
@@ -364,15 +464,17 @@ Map<String, Object?> _procedureBody(Procedure procedure, {required bool includeI
       if (includeIdentity) 'linkedProcedureIds': procedure.linkedProcedureIds,
       if (includeIdentity) 'linkedImplantIds': procedure.linkedImplantIds,
       if (includeIdentity)
+        // Retornos clássicos only — prótese: PUT /prosthesis-followups (L2S-74).
         'followUps': [
           for (final followUp in procedure.followUps)
-            {
-              'id': followUp.id,
-              'scheduledOn': _isoDate(followUp.date),
-              'reason': followUp.reason.name,
-              'reminderEnabled': followUp.reminderEnabled,
-              'reminderDaysBefore': followUp.reminderDaysBefore,
-            },
+            if (!followUp.isProsthesisTrack)
+              {
+                'id': followUp.id,
+                'scheduledOn': _isoDate(followUp.date),
+                'reason': followUp.reason.name,
+                'reminderEnabled': followUp.reminderEnabled,
+                'reminderDaysBefore': followUp.reminderDaysBefore,
+              },
         ],
       'statusLabel': clinicalStatusWire(procedure.statusLabel, procedure.modality),
       'notes': procedure.notes,
@@ -432,3 +534,40 @@ String? _contentType(String path) {
   return null;
 }
 
+
+/// Converte resposta L2S-74 em [FollowUp] local (track de prótese).
+FollowUp followUpFromProsthesisWire(Map<String, dynamic> json) {
+  final phase = parseFollowUpPhase(json['phase'] as String?) ?? FollowUpPhase.definitive;
+  final status = parseProsthesisFollowUpStatus(json['status'] as String?);
+  final statusAt = _parseIsoDateOrNull(json['statusAt'] as String?);
+  final statusDates = <String, DateTime?>{};
+  final events = json['events'];
+  if (events is List) {
+    for (final event in events) {
+      if (event is! Map) continue;
+      final eventStatus = parseProsthesisFollowUpStatus(event['status'] as String?);
+      if (eventStatus == null) continue;
+      statusDates[eventStatus.name] = _parseIsoDateOrNull(event['statusAt'] as String?);
+    }
+  }
+  if (status != null && statusAt != null) {
+    statusDates.putIfAbsent(status.name, () => statusAt);
+  }
+  return FollowUp(
+    id: json['id'] as String? ?? '',
+    date: statusAt ?? dateOnly(brasiliaToday()),
+    reason: ReturnReason.controle,
+    status: status == ProsthesisFollowUpStatus.installed
+        ? ReturnStatus.realizado
+        : ReturnStatus.agendado,
+    reminderEnabled: false,
+    phase: phase,
+    prosthesisStatus: phase == FollowUpPhase.definitive ? status : null,
+    statusDates: statusDates,
+  );
+}
+
+DateTime? _parseIsoDateOrNull(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  return DateTime.tryParse(raw.length >= 10 ? raw.substring(0, 10) : raw);
+}

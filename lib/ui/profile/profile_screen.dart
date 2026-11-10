@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/services/cep_lookup.dart';
+import '../../data/services/clinic_api.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/app_sheet.dart';
@@ -245,7 +247,7 @@ Future<void> _editLocation(
 }) async {
   final draft = await showAppSheet<({String name, String address})>(
     context: context,
-    builder: (context) => _LocationDialog(location: location),
+    builder: (context) => _LocationDialog(viewModel: viewModel, location: location),
   );
   if (draft == null || draft.name.isEmpty) return;
   if (location == null) {
@@ -256,8 +258,9 @@ Future<void> _editLocation(
 }
 
 class _LocationDialog extends StatefulWidget {
-  const _LocationDialog({this.location});
+  const _LocationDialog({required this.viewModel, this.location});
 
+  final ProfileViewModel viewModel;
   final CareLocation? location;
 
   @override
@@ -266,24 +269,102 @@ class _LocationDialog extends StatefulWidget {
 
 class _LocationDialogState extends State<_LocationDialog> {
   late final name = TextEditingController(text: widget.location?.name ?? '');
-  late final address = TextEditingController(text: widget.location?.address ?? '');
+  late final cep = TextEditingController();
+  late final street = TextEditingController();
+  late final number = TextEditingController();
+  late final neighborhood = TextEditingController();
+  late final city = TextEditingController();
+  late final state = TextEditingController();
+  late final complement = TextEditingController();
+  var _lookingUp = false;
+  String? _cepError;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.location?.address.trim() ?? '';
+    if (existing.isNotEmpty) {
+      // Endereços antigos (texto livre) entram em rua até o usuário refazer via CEP.
+      street.text = existing;
+    }
+  }
 
   @override
   void dispose() {
     name.dispose();
-    address.dispose();
+    cep.dispose();
+    street.dispose();
+    number.dispose();
+    neighborhood.dispose();
+    city.dispose();
+    state.dispose();
+    complement.dispose();
     super.dispose();
+  }
+
+  String get _composed => formatStructuredAddress(
+        street: street.text,
+        number: number.text,
+        neighborhood: neighborhood.text,
+        city: city.text,
+        state: state.text,
+        cep: cep.text,
+        complement: complement.text,
+      );
+
+  bool get _dirty {
+    final initialName = widget.location?.name ?? '';
+    final initialAddress = widget.location?.address ?? '';
+    return name.text.trim() != initialName || _composed != initialAddress;
+  }
+
+  Future<void> _lookupCep() async {
+    final digits = digitsOnly(cep.text);
+    if (digits.length != 8) {
+      setState(() => _cepError = 'CEP inválido. Informe 8 dígitos.');
+      return;
+    }
+    setState(() {
+      _lookingUp = true;
+      _cepError = null;
+    });
+    try {
+      final found = await widget.viewModel.lookupCep(digits);
+      if (!mounted) return;
+      setState(() {
+        street.text = found.street;
+        neighborhood.text = found.neighborhood;
+        city.text = found.city;
+        state.text = found.state;
+        cep.text = formatCepInput(found.cep);
+        _lookingUp = false;
+      });
+    } on ClinicApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _lookingUp = false;
+        _cepError = cepErrorMessage(
+          statusCode: error.statusCode,
+          code: error.code,
+          fallback: error.message,
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _lookingUp = false;
+        _cepError = 'Não foi possível consultar o CEP.';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final initialName = widget.location?.name ?? '';
-    final initialAddress = widget.location?.address ?? '';
     return AppSheet(
       title: widget.location == null ? 'Novo local' : 'Editar local',
-      dirty: name.text.trim() != initialName || address.text.trim() != initialAddress,
+      dirty: _dirty,
       footer: AppSheetActions(
-        onSave: () => AppSheet.pop(context, (name: name.text.trim(), address: address.text.trim())),
+        onSave: () => AppSheet.pop(context, (name: name.text.trim(), address: _composed)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -295,9 +376,93 @@ class _LocationDialogState extends State<_LocationDialog> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: cep,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'CEP',
+                    hintText: '00000-000',
+                    errorText: _cepError,
+                  ),
+                  onChanged: (value) {
+                    final formatted = formatCepInput(value);
+                    if (formatted != value) {
+                      cep.value = TextEditingValue(
+                        text: formatted,
+                        selection: TextSelection.collapsed(offset: formatted.length),
+                      );
+                    }
+                    setState(() => _cepError = null);
+                    if (digitsOnly(formatted).length == 8) {
+                      _lookupCep();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _lookingUp
+                    ? const SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Padding(
+                          padding: EdgeInsets.all(8),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        tooltip: 'Buscar CEP',
+                        onPressed: _lookingUp ? null : _lookupCep,
+                        icon: const Icon(Icons.search),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           TextField(
-            controller: address,
-            decoration: const InputDecoration(labelText: 'Endereço'),
+            controller: street,
+            decoration: const InputDecoration(labelText: 'Rua'),
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: number,
+            decoration: const InputDecoration(labelText: 'Número'),
+            keyboardType: TextInputType.streetAddress,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: complement,
+            decoration: const InputDecoration(labelText: 'Complemento'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: neighborhood,
+            decoration: const InputDecoration(labelText: 'Bairro'),
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: city,
+            decoration: const InputDecoration(labelText: 'Cidade'),
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: state,
+            decoration: const InputDecoration(labelText: 'UF', hintText: 'SP'),
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 2,
             onChanged: (_) => setState(() {}),
           ),
         ],

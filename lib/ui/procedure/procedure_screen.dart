@@ -9,6 +9,7 @@ import '../../data/services/clinic_files.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/app_sheet.dart';
+import '../core/date_picker.dart';
 import '../core/layout.dart';
 import '../view_models.dart';
 import 'traceability_editor.dart';
@@ -43,15 +44,33 @@ class ProcedureScreen extends StatelessWidget {
       (date: procedure.surgeryDate, title: 'Cirurgia', detail: procedure.classificationLabel),
       for (final visit in procedure.visits) (date: visit.date, title: 'Consulta', detail: visit.note),
       for (final followUp in procedure.followUps)
-        (
-          date: followUp.date,
-          title: returnStatusLabel(followUp.status),
-          detail: returnReasonLabel(followUp.reason),
-        ),
+        if (!followUp.isProsthesisTrack)
+          (
+            date: followUp.date,
+            title: returnStatusLabel(followUp.status),
+            detail: returnReasonLabel(followUp.reason),
+          )
+        else
+          (
+            date: followUp.date,
+            title: followUpPhaseLabel(followUp.phase!),
+            detail: followUp.phase == FollowUpPhase.definitive && followUp.prosthesisStatus != null
+                ? prosthesisFollowUpStatusLabel(followUp.prosthesisStatus!)
+                : 'Sem status',
+          ),
     ]..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
-      appBar: AppBar(title: Text(procedure.classificationLabel)),
+      appBar: AppBar(
+        title: Text(procedure.classificationLabel),
+        actions: [
+          IconButton(
+            tooltip: 'Excluir procedimento',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => _confirmDeleteProcedure(context, viewModel, procedure),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
@@ -201,16 +220,116 @@ class ProcedureScreen extends StatelessWidget {
             child: const Text('Registrar consulta'),
           ),
           for (final followUp in procedure.followUps)
-            if (followUp.status == ReturnStatus.agendado) ...[
+            if (!followUp.isProsthesisTrack && followUp.status == ReturnStatus.agendado) ...[
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => _complete(context, viewModel, procedure, followUp.id),
                 child: Text('Registrar ${returnReasonLabel(followUp.reason)}'),
               ),
             ],
+          if (procedure.modality == Modality.protese) ...[
+            const SizedBox(height: 20),
+            AppSectionHeader(
+              title: 'Follow-up de prótese',
+              action: PopupMenuButton<FollowUpPhase>(
+                tooltip: 'Adicionar',
+                onSelected: (phase) => viewModel.addProsthesisFollowUp(phase: phase),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: FollowUpPhase.provisional, child: Text('Provisório')),
+                  PopupMenuItem(value: FollowUpPhase.definitive, child: Text('Definitivo')),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text('Adicionar'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final followUp in procedure.followUps)
+              if (followUp.isProsthesisTrack) ...[
+                AppSurfaceCard(
+                  child: ListTile(
+                    title: Text(followUpPhaseLabel(followUp.phase!)),
+                    subtitle: Text(
+                      followUp.phase == FollowUpPhase.provisional
+                          ? 'Sem cadeia de status'
+                          : followUp.prosthesisStatus == null
+                              ? 'Definitivo'
+                              : prosthesisFollowUpStatusLabel(followUp.prosthesisStatus!),
+                    ),
+                    trailing: followUp.phase == FollowUpPhase.definitive
+                        ? TextButton(
+                            onPressed: () => _editProsthesisFollowUp(context, viewModel, followUp),
+                            child: const Text('Atualizar'),
+                          )
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _editProsthesisFollowUp(
+    BuildContext context,
+    ProcedureViewModel viewModel,
+    FollowUp followUp,
+  ) async {
+    final result = await showAppSheet<({ProsthesisFollowUpStatus status, DateTime? date})>(
+      context: context,
+      builder: (context) => _ProsthesisStatusSheet(followUp: followUp),
+    );
+    if (result == null) return;
+    viewModel.updateProsthesisFollowUp(
+      followUpId: followUp.id,
+      status: result.status,
+      statusDate: result.date,
+    );
+  }
+
+
+  Future<void> _confirmDeleteProcedure(
+    BuildContext context,
+    ProcedureViewModel viewModel,
+    Procedure procedure,
+  ) async {
+    final label = procedure.classificationLabel;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir procedimento'),
+        content: Text(
+          'Excluir "$label"?\n\n'
+          'O procedimento some da lista do paciente. Esta ação não pode ser desfeita neste app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!context.mounted) return;
+    try {
+      await viewModel.deleteProcedure();
+      if (!context.mounted) return;
+      context.pop();
+    } catch (_) {
+      // Erro já vai para ApiFeedbackHost; permanece na tela.
+    }
   }
 
   Future<void> _editNotes(BuildContext context, ProcedureViewModel viewModel) async {
@@ -490,6 +609,78 @@ class _ConsultationDialogState extends State<_ConsultationDialog> {
             const SizedBox(height: 8),
             Text(_noticePreview(), style: Theme.of(context).textTheme.bodySmall),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+
+class _ProsthesisStatusSheet extends StatefulWidget {
+  const _ProsthesisStatusSheet({required this.followUp});
+
+  final FollowUp followUp;
+
+  @override
+  State<_ProsthesisStatusSheet> createState() => _ProsthesisStatusSheetState();
+}
+
+class _ProsthesisStatusSheetState extends State<_ProsthesisStatusSheet> {
+  late ProsthesisFollowUpStatus status =
+      widget.followUp.prosthesisStatus ?? ProsthesisFollowUpStatus.molded;
+  DateTime? date;
+
+  @override
+  void initState() {
+    super.initState();
+    date = widget.followUp.statusDates[status.name];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSheet(
+      title: 'Status do definitivo',
+      dirty: true,
+      footer: AppSheetActions(
+        onSave: () => AppSheet.pop(context, (status: status, date: date)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in prosthesisFollowUpStatusOrder)
+                ChoiceChip(
+                  showCheckmark: false,
+                  label: Text(prosthesisFollowUpStatusLabel(option)),
+                  selected: status == option,
+                  onSelected: (_) => setState(() {
+                    status = option;
+                    date = widget.followUp.statusDates[option.name];
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Data desta etapa (opcional)'),
+            subtitle: Text(date == null ? 'Não informada' : formatDay(date!)),
+            trailing: TextButton(
+              onPressed: () async {
+                final picked = await showAppDatePicker(
+                  context: context,
+                  initialDate: date ?? DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2040),
+                );
+                if (picked != null) setState(() => date = picked);
+              },
+              child: const Text('Informar'),
+            ),
+          ),
         ],
       ),
     );

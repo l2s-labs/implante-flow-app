@@ -6,6 +6,7 @@ import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/layout.dart';
 import '../view_models.dart';
+import 'implant_detail_sheet.dart';
 import 'patient_editor.dart';
 import 'preexisting_implant_sheet.dart';
 
@@ -28,15 +29,19 @@ class PatientScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              TextButton(onPressed: () => context.pop(), child: const Text('Voltar')),
+              TextButton(
+                onPressed: () => context.pop(),
+                child: const Text('Voltar'),
+              ),
             ],
           ),
         ),
       );
     }
     final upcoming = viewModel.upcoming;
-    final timeline = viewModel.timeline;
     final implants = viewModel.implants;
+    final procedures = [...viewModel.history]
+      ..sort((a, b) => b.surgeryDate.compareTo(a.surgeryDate));
     return Scaffold(
       appBar: AppBar(
         title: Text(patient.name),
@@ -69,11 +74,21 @@ class PatientScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(patient.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  patient.name,
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 8),
-                Text(patient.phone.isEmpty ? 'Sem telefone' : formatBrazilianPhone(patient.phone)),
+                Text(
+                  patient.phone.isEmpty
+                      ? 'Sem telefone'
+                      : formatBrazilianPhone(patient.phone),
+                ),
                 Text(patient.email.isEmpty ? 'Sem e-mail' : patient.email),
-                Text(_locationLine(patient, viewModel.snapshot.profile.locations)),
+                Text(
+                  _locationLine(patient, viewModel.snapshot.profile.locations),
+                ),
                 Text(_noticeLine(patient)),
                 Text(cpfLabel(patient.cpf)),
                 Text('Nascimento ${formatDay(patient.birthDate)}'),
@@ -87,10 +102,32 @@ class PatientScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const AppSectionHeader(
-            title: 'Implantes',
-            subtitle: 'Inclui cirurgias do sistema e preexistentes informados.',
-          ),
+          const AppSectionHeader(title: 'Próximos encontros'),
+          const SizedBox(height: 8),
+          if (upcoming.isEmpty)
+            const AppEmptyHint('Nenhum retorno agendado.')
+          else
+            for (final followUp in upcoming) ...[
+              AppSurfaceCard(
+                child: ListTile(
+                  title: Text(formatDay(followUp.date)),
+                  subtitle: Text(
+                    followUp.reason == ReturnReason.sutura
+                        ? returnReasonLabel(followUp.reason)
+                        : '${returnReasonLabel(followUp.reason)} · lembrete ${followUp.reminderEnabled ? reminderLeadLabel(followUp.reminderDaysBefore) : 'desligado'}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final procedure = viewModel.procedureOf(followUp.id);
+                    if (procedure == null) return;
+                    context.push('/procedures/${procedure.id}');
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          const SizedBox(height: 12),
+          const AppSectionHeader(title: 'Implantes instalados'),
           const SizedBox(height: 8),
           if (implants.isEmpty)
             const AppEmptyHint('Nenhum implante cadastrado.')
@@ -103,7 +140,12 @@ class PatientScreen extends StatelessWidget {
                   isThreeLine: implant.notes.isNotEmpty,
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
-                    if (implant.sourceProcedureId != null) {
+                    final action = await showImplantDetailSheet(
+                      context,
+                      implant: implant,
+                    );
+                    if (action == null || !context.mounted) return;
+                    if (action == ImplantDetailAction.viewProcedure) {
                       context.push('/procedures/${implant.sourceProcedureId}');
                       return;
                     }
@@ -132,45 +174,18 @@ class PatientScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const AppSectionHeader(title: 'Próximos encontros'),
+          const AppSectionHeader(title: 'Procedimentos'),
           const SizedBox(height: 8),
-          if (upcoming.isEmpty)
-            const AppEmptyHint('Nenhum retorno agendado.')
+          if (procedures.isEmpty)
+            const AppEmptyHint('Nenhum procedimento cadastrado.')
           else
-            for (final followUp in upcoming) ...[
+            for (final procedure in procedures) ...[
               AppSurfaceCard(
                 child: ListTile(
-                  title: Text(formatDay(followUp.date)),
-                  subtitle: Text(
-                    followUp.reason == ReturnReason.sutura
-                        ? returnReasonLabel(followUp.reason)
-                        : '${returnReasonLabel(followUp.reason)} · lembrete ${followUp.reminderEnabled ? reminderLeadLabel(followUp.reminderDaysBefore) : 'desligado'}',
-                  ),
+                  title: Text(_procedureTitle(procedure)),
+                  subtitle: Text(_procedureSubtitle(procedure)),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    final procedure = viewModel.procedureOf(followUp.id);
-                    if (procedure == null) return;
-                    context.push('/procedures/${procedure.id}');
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          const SizedBox(height: 12),
-          const AppSectionHeader(title: 'Histórico'),
-          const SizedBox(height: 8),
-          if (timeline.isEmpty)
-            const AppEmptyHint('Nenhuma cirurgia ou consulta.')
-          else
-            for (final event in timeline) ...[
-              AppSurfaceCard(
-                child: ListTile(
-                  title: Text(event.title),
-                  subtitle: Text('${formatDay(event.date)} · ${event.detail}'),
-                  trailing: event.procedureId == null ? null : const Icon(Icons.chevron_right),
-                  onTap: event.procedureId == null
-                      ? null
-                      : () => context.push('/procedures/${event.procedureId}'),
+                  onTap: () => context.push('/procedures/${procedure.id}'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -216,6 +231,21 @@ class PatientScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+String _procedureTitle(Procedure procedure) {
+  final teeth = procedure.teethLabel;
+  if (teeth.isEmpty) return procedure.classificationLabel;
+  return '${procedure.classificationLabel} · $teeth';
+}
+
+String _procedureSubtitle(Procedure procedure) {
+  final parts = <String>[
+    formatDay(procedure.surgeryDate),
+    clinicalStatusDisplay(procedure.statusLabel, procedure.modality),
+    if (procedure.teethLabel.isNotEmpty) procedure.teethLabel,
+  ].where((part) => part.trim().isNotEmpty).toList();
+  return parts.join(' · ');
 }
 
 String _locationLine(Patient patient, List<CareLocation> locations) {

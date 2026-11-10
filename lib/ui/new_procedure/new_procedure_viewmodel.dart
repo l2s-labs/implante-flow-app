@@ -229,6 +229,21 @@ class ExtraReturnDraft {
   int reminderDaysBefore;
 }
 
+class ProsthesisFollowUpDraft {
+  ProsthesisFollowUpDraft({
+    required this.id,
+    required this.phase,
+    this.prosthesisStatus,
+    Map<String, DateTime?>? statusDates,
+  }) : statusDates = statusDates ?? {};
+
+  final int id;
+  FollowUpPhase phase;
+  ProsthesisFollowUpStatus? prosthesisStatus;
+  final Map<String, DateTime?> statusDates;
+}
+
+
 class NewProcedureViewModel extends ChangeNotifier {
   NewProcedureViewModel(this.repository, {required this.patientId}) {
     final profile = repository.current.profile;
@@ -257,6 +272,8 @@ class NewProcedureViewModel extends ChangeNotifier {
   late bool longReminder;
   late int longLead;
   final List<ExtraReturnDraft> extraReturns = [];
+  final List<ProsthesisFollowUpDraft> prosthesisFollowUps = [];
+  var _prosthesisSeq = 1;
   int _extraSeq = 0;
   bool catalogRefreshing = false;
 
@@ -274,7 +291,7 @@ class NewProcedureViewModel extends ChangeNotifier {
   bool get schedulesSurgicalReturns => modality != null && !isProsthesis;
 
   bool get hasDraftProgress =>
-      selected.isNotEmpty || linkedImplantIds.isNotEmpty || associatedGraft || extraReturns.isNotEmpty;
+      selected.isNotEmpty || linkedImplantIds.isNotEmpty || associatedGraft || extraReturns.isNotEmpty || prosthesisFollowUps.isNotEmpty;
 
   String get draftLabel => classificationLabelFor(
         modality: modality ?? Modality.implante,
@@ -408,6 +425,7 @@ class NewProcedureViewModel extends ChangeNotifier {
     associatedGraft = false;
     _clearSinusLift();
     extraReturns.clear();
+    prosthesisFollowUps.clear();
   }
 
   void setSinusLift(bool value) {
@@ -653,6 +671,44 @@ class NewProcedureViewModel extends ChangeNotifier {
     });
   }
 
+
+  void addProsthesisFollowUp(FollowUpPhase phase) {
+    prosthesisFollowUps.add(
+      ProsthesisFollowUpDraft(
+        id: _prosthesisSeq++,
+        phase: phase,
+        prosthesisStatus: phase == FollowUpPhase.definitive ? ProsthesisFollowUpStatus.molded : null,
+      ),
+    );
+    notifyListeners();
+  }
+
+  void setProsthesisFollowUpStatus(int id, ProsthesisFollowUpStatus status) {
+    final draft = _prosthesisById(id);
+    if (draft == null || draft.phase != FollowUpPhase.definitive) return;
+    draft.prosthesisStatus = status;
+    notifyListeners();
+  }
+
+  void setProsthesisStatusDate(int id, ProsthesisFollowUpStatus status, DateTime? date) {
+    final draft = _prosthesisById(id);
+    if (draft == null || draft.phase != FollowUpPhase.definitive) return;
+    draft.statusDates[status.name] = date == null ? null : dateOnly(date);
+    notifyListeners();
+  }
+
+  void removeProsthesisFollowUp(int id) {
+    prosthesisFollowUps.removeWhere((item) => item.id == id);
+    notifyListeners();
+  }
+
+  ProsthesisFollowUpDraft? _prosthesisById(int id) {
+    for (final draft in prosthesisFollowUps) {
+      if (draft.id == id) return draft;
+    }
+    return null;
+  }
+
   List<Procedure> save() {
     final current = modality!;
     final recordSinus = current == Modality.enxerto || (isImplant && associatedGraft);
@@ -722,6 +778,21 @@ class NewProcedureViewModel extends ChangeNotifier {
               status: ReturnStatus.agendado,
               reminderEnabled: longReminder,
               reminderDaysBefore: longLead,
+            ),
+          for (final draft in prosthesisFollowUps)
+            FollowUp(
+              id: repository.allocateId('ret'),
+              date: dateOnly(surgery),
+              reason: ReturnReason.controle,
+              status: draft.prosthesisStatus == ProsthesisFollowUpStatus.installed
+                  ? ReturnStatus.realizado
+                  : ReturnStatus.agendado,
+              reminderEnabled: false,
+              phase: draft.phase,
+              prosthesisStatus: draft.phase == FollowUpPhase.definitive ? draft.prosthesisStatus : null,
+              statusDates: {
+                for (final entry in draft.statusDates.entries) entry.key: entry.value,
+              },
             ),
         ]),
       ),

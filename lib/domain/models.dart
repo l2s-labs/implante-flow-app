@@ -53,6 +53,19 @@ enum ReturnReason {
 
 enum ReturnStatus { agendado, realizado, faltou }
 
+/// Fase do follow-up de prótese (ADR-003 / L2S-71).
+enum FollowUpPhase { provisional, definitive }
+
+/// Cadeia de status do follow-up definitivo de prótese (L2S-74 wire EN camelCase).
+enum ProsthesisFollowUpStatus { molded, sentToLab, returnedFromLab, installed }
+
+const prosthesisFollowUpStatusOrder = <ProsthesisFollowUpStatus>[
+  ProsthesisFollowUpStatus.molded,
+  ProsthesisFollowUpStatus.sentToLab,
+  ProsthesisFollowUpStatus.returnedFromLab,
+  ProsthesisFollowUpStatus.installed,
+];
+
 enum CalendarKind { cirurgia, consulta, retorno }
 
 const upperArch = <int>[
@@ -344,6 +357,60 @@ String returnStatusLabel(ReturnStatus status) => switch (status) {
       ReturnStatus.faltou => 'Faltou',
     };
 
+String followUpPhaseLabel(FollowUpPhase phase) => switch (phase) {
+      FollowUpPhase.provisional => 'Provisório',
+      FollowUpPhase.definitive => 'Definitivo',
+    };
+
+String prosthesisFollowUpStatusLabel(ProsthesisFollowUpStatus status) => switch (status) {
+      ProsthesisFollowUpStatus.molded => 'Moldado',
+      ProsthesisFollowUpStatus.sentToLab => 'Enviado ao laboratório',
+      ProsthesisFollowUpStatus.returnedFromLab => 'Retorno do laboratório',
+      ProsthesisFollowUpStatus.installed => 'Instalada',
+    };
+
+/// Wire L2S-74 (+ legado snake_case local).
+ProsthesisFollowUpStatus? parseProsthesisFollowUpStatus(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  switch (raw) {
+    case 'molded':
+    case 'moldado':
+      return ProsthesisFollowUpStatus.molded;
+    case 'sentToLab':
+    case 'sent_to_lab':
+    case 'enviadoLaboratorio':
+      return ProsthesisFollowUpStatus.sentToLab;
+    case 'returnedFromLab':
+    case 'returned_from_lab':
+    case 'retornoLaboratorio':
+      return ProsthesisFollowUpStatus.returnedFromLab;
+    case 'installed':
+    case 'instalada':
+      return ProsthesisFollowUpStatus.installed;
+    default:
+      return null;
+  }
+}
+
+FollowUpPhase? parseFollowUpPhase(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  switch (raw) {
+    case 'provisional':
+    case 'provisorio':
+      return FollowUpPhase.provisional;
+    case 'definitive':
+    case 'definitivo':
+      return FollowUpPhase.definitive;
+    default:
+      return null;
+  }
+}
+
+/// Chave de statusDates: aceita wire atual e legado snake_case.
+String normalizeProsthesisStatusDateKey(String key) {
+  return parseProsthesisFollowUpStatus(key)?.name ?? key;
+}
+
 const defaultReminderDaysBefore = 15;
 
 const reminderLeadDayOptions = <int>[7, 15, 30];
@@ -448,7 +515,7 @@ enum ImplantOrigin { preexisting, procedureRecorded }
 
 String implantOriginLabel(ImplantOrigin origin) => switch (origin) {
       ImplantOrigin.preexisting => 'Preexistente / histórico informado',
-      ImplantOrigin.procedureRecorded => 'Cirurgia no sistema',
+      ImplantOrigin.procedureRecorded => 'Registrado no sistema',
     };
 
 ImplantOrigin implantOriginFromWire(String? value) => switch (value) {
@@ -769,6 +836,9 @@ class FollowUp {
     required this.reminderEnabled,
     this.reminderDaysBefore = defaultReminderDaysBefore,
     this.overdueNotified = false,
+    this.phase,
+    this.prosthesisStatus,
+    this.statusDates = const {},
   });
 
   final String id;
@@ -779,6 +849,15 @@ class FollowUp {
   final int reminderDaysBefore;
   final bool overdueNotified;
 
+  /// Follow-up de prótese (ADR-003). `null` = retorno clínico clássico.
+  final FollowUpPhase? phase;
+  final ProsthesisFollowUpStatus? prosthesisStatus;
+
+  /// Datas opcionais por status do definitivo (chave = wire EN, ex. `sentToLab`).
+  final Map<String, DateTime?> statusDates;
+
+  bool get isProsthesisTrack => phase != null;
+
   DateTime get reminderOn => dateOnly(date).subtract(Duration(days: reminderDaysBefore));
 
   FollowUp copyWith({
@@ -788,6 +867,11 @@ class FollowUp {
     bool? reminderEnabled,
     int? reminderDaysBefore,
     bool? overdueNotified,
+    FollowUpPhase? phase,
+    ProsthesisFollowUpStatus? prosthesisStatus,
+    Map<String, DateTime?>? statusDates,
+    bool clearPhase = false,
+    bool clearProsthesisStatus = false,
   }) {
     return FollowUp(
       id: id,
@@ -797,6 +881,9 @@ class FollowUp {
       reminderEnabled: reminderEnabled ?? this.reminderEnabled,
       reminderDaysBefore: reminderDaysBefore ?? this.reminderDaysBefore,
       overdueNotified: overdueNotified ?? this.overdueNotified,
+      phase: clearPhase ? null : (phase ?? this.phase),
+      prosthesisStatus: clearProsthesisStatus ? null : (prosthesisStatus ?? this.prosthesisStatus),
+      statusDates: statusDates ?? this.statusDates,
     );
   }
 }
@@ -1088,6 +1175,45 @@ String formatDay(DateTime date) {
   final month = date.month.toString().padLeft(2, '0');
   return '$day/$month/${date.year}';
 }
+
+/// Monta o texto único de endereço do local a partir dos campos estruturados (L2S-68).
+String formatStructuredAddress({
+  String street = '',
+  String number = '',
+  String neighborhood = '',
+  String city = '',
+  String state = '',
+  String cep = '',
+  String complement = '',
+}) {
+  final parts = <String>[];
+  final line1 = [
+    street.trim(),
+    if (number.trim().isNotEmpty) number.trim(),
+  ].where((part) => part.isNotEmpty).join(', ');
+  if (line1.isNotEmpty) parts.add(line1);
+  if (neighborhood.trim().isNotEmpty) parts.add(neighborhood.trim());
+  final cityState = [
+    city.trim(),
+    if (state.trim().isNotEmpty) state.trim().toUpperCase(),
+  ].where((part) => part.isNotEmpty).join('/');
+  if (cityState.isNotEmpty) parts.add(cityState);
+  final digits = digitsOnly(cep);
+  if (digits.isNotEmpty) {
+    final label = digits.length == 8 ? '${digits.substring(0, 5)}-${digits.substring(5)}' : digits;
+    parts.add('CEP $label');
+  }
+  if (complement.trim().isNotEmpty) parts.add(complement.trim());
+  return parts.join(' · ');
+}
+
+String formatCepInput(String raw) {
+  final digits = digitsOnly(raw);
+  if (digits.length <= 5) return digits;
+  final clipped = digits.length > 8 ? digits.substring(0, 8) : digits;
+  return '${clipped.substring(0, 5)}-${clipped.substring(5)}';
+}
+
 
 DateTime dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
 
