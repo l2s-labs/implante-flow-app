@@ -235,6 +235,12 @@ class ClinicApi {
     );
   }
 
+  Future<void> updateProfileIdentity(String token, {required String name, required String phone, required String cro}) async {
+    await _send('PATCH', '/v1/profile', token: token, body: {
+      'name': name, 'phone': phone, 'cro': normalizeCro(cro) ?? cro,
+    });
+  }
+
   Future<void> createImplant(String token, InstalledImplant implant) async {
     await _send(
       'POST',

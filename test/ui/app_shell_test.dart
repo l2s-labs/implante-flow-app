@@ -13,7 +13,7 @@ void main() {
   testWidgets('a aba inicial do menu inferior se chama Início', (tester) async {
     final repository = MockClinicRepository.fromSnapshot(
       const ClinicSnapshot(
-        profile: DentistProfile(name: 'Dra. Helena', email: 'helena@consultorio.exemplo'),
+        profile: DentistProfile(name: 'Dra. Helena', email: 'helena@consultorio.exemplo', phone: '21999999999', cro: 'RJ 12345', locations: [CareLocation(id: 'loc-1', name: 'Clínica', isDefault: true)]),
         signedIn: true,
         patients: [],
         procedures: [],

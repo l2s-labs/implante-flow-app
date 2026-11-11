@@ -21,13 +21,13 @@ class ApiClinicRepository implements ClinicRepository {
     ClinicalCatalog? initialCatalog,
     Future<void> Function(ClinicSnapshot snapshot)? persist,
     CatalogStore? catalogStore,
-  })  : _catalog = initialCatalog ?? bundledClinicalCatalog,
-        _catalogStore = catalogStore ?? LocalCatalogStore(),
-        _local = ClinicStateStore.fromSnapshot(
-          initial,
-          persist: persist,
-          ids: newClinicId,
-        ) {
+  }) : _catalog = initialCatalog ?? bundledClinicalCatalog,
+       _catalogStore = catalogStore ?? LocalCatalogStore(),
+       _local = ClinicStateStore.fromSnapshot(
+         initial,
+         persist: persist,
+         ids: newClinicId,
+       ) {
     activeClinicalCatalog = _catalog;
   }
 
@@ -39,6 +39,10 @@ class ApiClinicRepository implements ClinicRepository {
   var _token = '';
   var _epoch = 0;
   var _nameBackfilled = false;
+  bool _hasFreshChart = false;
+
+  @override
+  bool get hasFreshChart => _hasFreshChart;
   Future<void> _tail = Future<void>.value();
   Future<String?> Function()? _refreshToken;
   Future<String?>? _refreshInFlight;
@@ -80,14 +84,20 @@ class ApiClinicRepository implements ClinicRepository {
   void applyOverdueNotices() => _local.applyOverdueNotices();
 
   @override
-  void signIn({required String name, required String email, String accessToken = ''}) {
+  void signIn({
+    required String name,
+    required String email,
+    String accessToken = '',
+  }) {
     if (accessToken.isNotEmpty) _token = accessToken;
     _local.signIn(name: sanitizePersonName(name), email: email);
   }
 
   @override
   void signOut() {
+    _epoch++;
     _token = '';
+    _hasFreshChart = false;
     _local.signOut();
   }
 
@@ -98,10 +108,29 @@ class ApiClinicRepository implements ClinicRepository {
       final epoch = _epoch;
       final chart = await _authorized(api.fetchChart);
       if (epoch != _epoch) return;
+      _hasFreshChart = true;
       _applyChart(chart);
       await _mergeProsthesisFollowUps(epoch);
       await _refreshCatalog(epoch);
     });
+  }
+
+  @override
+  Future<void> refreshForSignIn() {
+    final first = _enqueue(() async {
+      final epoch = _epoch;
+      final chart = await _authorized(api.fetchChart);
+      if (epoch != _epoch) return;
+      _hasFreshChart = true;
+      _applyChart(chart);
+    });
+    unawaited(_enqueue(() async {
+      final epoch = _epoch;
+      if (!_hasFreshChart) return;
+      await _mergeProsthesisFollowUps(epoch);
+      await _refreshCatalog(epoch);
+    }));
+    return first;
   }
 
   @override
@@ -176,7 +205,9 @@ class ApiClinicRepository implements ClinicRepository {
   void updatePatient(Patient patient) {
     _epoch++;
     _local.updatePatient(patient);
-    final saved = _local.current.patients.firstWhere((item) => item.id == patient.id);
+    final saved = _local.current.patients.firstWhere(
+      (item) => item.id == patient.id,
+    );
     _enqueue(
       () => _authorized((token) => api.updatePatient(token, saved)),
       success: 'Paciente atualizado com sucesso.',
@@ -242,7 +273,9 @@ class ApiClinicRepository implements ClinicRepository {
     if (photo.path.isEmpty) return;
     _enqueue(() async {
       try {
-        await _authorized((token) => api.uploadPhoto(token, procedureId, photo));
+        await _authorized(
+          (token) => api.uploadPhoto(token, procedureId, photo),
+        );
       } on ClinicApiException catch (error) {
         // Sem object store a API responde 503; a foto permanece só no aparelho.
         if (error.statusCode == 503) return;
@@ -259,13 +292,23 @@ class ApiClinicRepository implements ClinicRepository {
   }) {
     _epoch++;
     final before = _visits(procedureId).length;
-    _local.addVisit(procedureId: procedureId, note: note, statusLabel: statusLabel);
+    _local.addVisit(
+      procedureId: procedureId,
+      note: note,
+      statusLabel: statusLabel,
+    );
     final visit = _visits(procedureId).elementAt(before);
     final modality =
-        _local.current.procedures.where((item) => item.id == procedureId).firstOrNull?.modality ??
+        _local.current.procedures
+            .where((item) => item.id == procedureId)
+            .firstOrNull
+            ?.modality ??
         Modality.implante;
     _enqueue(
-      () => _authorized((token) => api.recordVisit(token, procedureId, visit, modality: modality)),
+      () => _authorized(
+        (token) =>
+            api.recordVisit(token, procedureId, visit, modality: modality),
+      ),
       success: 'Consulta registrada com sucesso.',
     );
   }
@@ -288,15 +331,24 @@ class ApiClinicRepository implements ClinicRepository {
       returnStatus: returnStatus,
     );
     final updated = _procedureOfFollowUp(followUpId);
-    final followUp = updated?.followUps.where((item) => item.id == followUpId).firstOrNull;
+    final followUp = updated?.followUps
+        .where((item) => item.id == followUpId)
+        .firstOrNull;
     if (followUp != null) {
-      _enqueue(() => _authorized((token) => api.updateFollowUp(token, followUp)));
+      _enqueue(
+        () => _authorized((token) => api.updateFollowUp(token, followUp)),
+      );
     }
     if (updated != null && updated.visits.length > before) {
       final visit = updated.visits[before];
       _enqueue(
         () => _authorized(
-          (token) => api.recordVisit(token, updated.id, visit, modality: updated.modality),
+          (token) => api.recordVisit(
+            token,
+            updated.id,
+            visit,
+            modality: updated.modality,
+          ),
         ),
       );
     }
@@ -314,7 +366,9 @@ class ApiClinicRepository implements ClinicRepository {
       statusDate: statusDate,
     );
     final procedure = _procedureOfFollowUp(followUpId);
-    final followUp = procedure?.followUps.where((item) => item.id == followUpId).firstOrNull;
+    final followUp = procedure?.followUps
+        .where((item) => item.id == followUpId)
+        .firstOrNull;
     if (procedure == null || followUp == null || followUp.phase == null) return;
     final phase = followUp.phase!;
     _enqueue(
@@ -336,7 +390,9 @@ class ApiClinicRepository implements ClinicRepository {
     required FollowUpPhase phase,
   }) {
     _local.addProsthesisFollowUp(procedureId: procedureId, phase: phase);
-    final procedure = current.procedures.where((item) => item.id == procedureId).firstOrNull;
+    final procedure = current.procedures
+        .where((item) => item.id == procedureId)
+        .firstOrNull;
     if (procedure == null) return;
     final followUp = procedure.followUps
         .where((item) => item.isProsthesisTrack && item.phase == phase)
@@ -356,7 +412,6 @@ class ApiClinicRepository implements ClinicRepository {
     );
   }
 
-
   @override
   Future<Uint8List> issueCertificate(
     String procedureId, {
@@ -374,7 +429,10 @@ class ApiClinicRepository implements ClinicRepository {
     );
     final downloadUrl = issued['downloadUrl'] as String? ?? '';
     if (downloadUrl.isEmpty) {
-      throw const ClinicApiException(500, 'A API não devolveu o link do certificado.');
+      throw const ClinicApiException(
+        500,
+        'A API não devolveu o link do certificado.',
+      );
     }
     final bytes = await api.downloadBytes(downloadUrl);
     final path = await ClinicFiles().saveBytes(
@@ -386,12 +444,18 @@ class ApiClinicRepository implements ClinicRepository {
   }
 
   @override
-  void reprocessStageNotice({required String procedureId, required String noticeId}) {
+  void reprocessStageNotice({
+    required String procedureId,
+    required String noticeId,
+  }) {
     _local.reprocessStageNotice(procedureId: procedureId, noticeId: noticeId);
   }
 
   @override
-  void failStageNotice({required String procedureId, required String noticeId}) {
+  void failStageNotice({
+    required String procedureId,
+    required String noticeId,
+  }) {
     _local.failStageNotice(procedureId: procedureId, noticeId: noticeId);
   }
 
@@ -400,13 +464,67 @@ class ApiClinicRepository implements ClinicRepository {
     _epoch++;
     final previous = _local.current.profile;
     _local.updateProfile(profile);
-    _enqueue(
-      () async {
-        await _authorized((token) => api.updateProfile(token, profile));
-        await _syncLocations(previous.locations, profile.locations);
-      },
-      success: 'Perfil atualizado com sucesso.',
-    );
+    _enqueue(() async {
+      await _authorized((token) => api.updateProfile(token, profile));
+      await _syncLocations(previous.locations, profile.locations);
+    }, success: 'Perfil atualizado com sucesso.');
+  }
+
+  @override
+  Future<void> saveProfileIdentity({required String name, required String phone, required String cro}) {
+    final result = Completer<void>();
+    final epoch = _epoch;
+    _tail = _tail.then((_) async {
+      try {
+        if (epoch != _epoch) throw const ClinicApiException(401, 'A sessão mudou. Tente novamente.');
+        await _authorized((token) => api.updateProfileIdentity(token, name: name, phone: phone, cro: cro));
+        if (epoch != _epoch) throw const ClinicApiException(401, 'A sessão mudou. Entre novamente.');
+        _epoch++;
+        _local.updateProfile(_local.current.profile.copyWith(name: name, phone: phone, cro: cro));
+        result.complete();
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    });
+    return result.future;
+  }
+
+  @override
+  Future<void> completeFirstSteps(DentistProfile profile) async {
+    final result = Completer<void>();
+    final epoch = _epoch;
+    _tail = _tail.then((_) async {
+      try {
+        final chart = await _authorized(api.fetchChart);
+        if (epoch != _epoch) throw const ClinicApiException(401, 'A sessão terminou. Entre novamente.');
+        final server = snapshotFromJson({
+          'signedIn': true,
+          'profile': chart['profile'],
+          'patients': chart['patients'],
+          'procedures': chart['procedures'],
+        });
+        final selected = profile.locations.firstWhere((item) => item.active && item.isDefault);
+        final locations = [...server.profile.locations];
+        if (!locations.any((item) => item.id == selected.id)) {
+          locations.add(selected);
+        }
+        final next = [for (final item in locations) item.copyWith(isDefault: item.active && item.id == selected.id)];
+        await _authorized((token) => api.updateProfile(token, server.profile.copyWith(
+          name: sanitizePersonName(server.profile.name).isEmpty ? profile.name : server.profile.name,
+          phone: profile.phone, cro: profile.cro,
+        )));
+        await _syncLocations(server.profile.locations, next);
+        final updated = await _authorized(api.fetchChart);
+        if (epoch != _epoch) throw const ClinicApiException(401, 'A sessão terminou. Entre novamente.');
+        _epoch++;
+        _applyChart(updated);
+        result.complete();
+      } catch (error, stack) {
+        await _reconcile();
+        result.completeError(error, stack);
+      }
+    });
+    return result.future;
   }
 
   @override
@@ -431,39 +549,60 @@ class ApiClinicRepository implements ClinicRepository {
   }
 
   List<Visit> _visits(String procedureId) {
-    return _local.current.procedures.firstWhere((item) => item.id == procedureId).visits;
+    return _local.current.procedures
+        .firstWhere((item) => item.id == procedureId)
+        .visits;
   }
 
   Procedure? _procedureOfFollowUp(String followUpId) {
     for (final procedure in _local.current.procedures) {
-      if (procedure.followUps.any((item) => item.id == followUpId)) return procedure;
+      if (procedure.followUps.any((item) => item.id == followUpId)) {
+        return procedure;
+      }
     }
     return null;
   }
 
-  Future<void> _syncLocations(List<CareLocation> previous, List<CareLocation> next) async {
-    final previousById = {for (final location in previous) location.id: location};
+  Future<void> _syncLocations(
+    List<CareLocation> previous,
+    List<CareLocation> next,
+  ) async {
+    final previousById = {
+      for (final location in previous) location.id: location,
+    };
     for (final location in next) {
       final prior = previousById[location.id];
       if (prior == null) {
         await _authorized((token) => api.createLocation(token, location));
-      } else if (prior.name != location.name || prior.address != location.address) {
+      } else if (prior.name != location.name ||
+          prior.address != location.address) {
         await _authorized((token) => api.updateLocation(token, location));
       }
     }
-    final nextDefault = next.where((location) => location.active && location.isDefault).toList();
-    final previousDefault = previous.where((location) => location.active && location.isDefault).toList();
+    final nextDefault = next
+        .where((location) => location.active && location.isDefault)
+        .toList();
+    final previousDefault = previous
+        .where((location) => location.active && location.isDefault)
+        .toList();
     if (nextDefault.length == 1 &&
-        (previousDefault.isEmpty || previousDefault.first.id != nextDefault.first.id)) {
-      await _authorized((token) => api.setDefaultLocation(token, nextDefault.first.id));
+        (previousDefault.isEmpty ||
+            previousDefault.first.id != nextDefault.first.id)) {
+      await _authorized(
+        (token) => api.setDefaultLocation(token, nextDefault.first.id),
+      );
     }
     for (final location in next) {
       final prior = previousById[location.id];
       if (prior == null) continue;
       if (prior.active && !location.active) {
-        await _authorized((token) => api.inactivateLocation(token, location.id));
+        await _authorized(
+          (token) => api.inactivateLocation(token, location.id),
+        );
       } else if (!prior.active && location.active) {
-        await _authorized((token) => api.reactivateLocation(token, location.id));
+        await _authorized(
+          (token) => api.reactivateLocation(token, location.id),
+        );
       }
     }
   }
@@ -479,7 +618,9 @@ class ApiClinicRepository implements ClinicRepository {
     final apiName = sanitizePersonName(snapshot.profile.name);
     final localName = sanitizePersonName(_local.current.profile.name);
     final keptName = apiName.isNotEmpty ? apiName : localName;
-    final keptEmail = snapshot.profile.email.trim().isEmpty ? _local.current.profile.email : snapshot.profile.email;
+    final keptEmail = snapshot.profile.email.trim().isEmpty
+        ? _local.current.profile.email
+        : snapshot.profile.email;
     final profile = snapshot.profile.copyWith(name: keptName, email: keptEmail);
     _local.replaceSnapshot(snapshot.copyWith(profile: profile));
     _local.applyOverdueNotices();
@@ -494,7 +635,10 @@ class ApiClinicRepository implements ClinicRepository {
     if (token.isEmpty) {
       token = await _refreshAccessToken() ?? '';
       if (token.isEmpty) {
-        throw const ClinicApiException(401, 'Entre de novo para sincronizar o prontuário.');
+        throw const ClinicApiException(
+          401,
+          'Entre de novo para sincronizar o prontuário.',
+        );
       }
     }
     try {
@@ -552,6 +696,7 @@ class ApiClinicRepository implements ClinicRepository {
       final epoch = _epoch;
       final chart = await _authorized(api.fetchChart);
       if (epoch != _epoch) return;
+      _hasFreshChart = true;
       _applyChart(chart);
       await _mergeProsthesisFollowUps(epoch);
     } catch (_) {
@@ -559,13 +704,20 @@ class ApiClinicRepository implements ClinicRepository {
     }
   }
 
-  Future<void> _syncProsthesisFollowUps(String token, Procedure procedure) async {
+  Future<void> _syncProsthesisFollowUps(
+    String token,
+    Procedure procedure,
+  ) async {
     if (procedure.modality != Modality.protese) return;
     for (final followUp in procedure.followUps) {
       if (!followUp.isProsthesisTrack || followUp.phase == null) continue;
       final phase = followUp.phase!;
-      final status = phase == FollowUpPhase.definitive ? followUp.prosthesisStatus : null;
-      final statusAt = status == null ? null : followUp.statusDates[status.name];
+      final status = phase == FollowUpPhase.definitive
+          ? followUp.prosthesisStatus
+          : null;
+      final statusAt = status == null
+          ? null
+          : followUp.statusDates[status.name];
       await api.upsertProsthesisFollowUp(
         token,
         procedure.id,
@@ -620,6 +772,8 @@ String newClinicId() {
   final bytes = List<int>.generate(16, (_) => random.nextInt(256));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  final hex = bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  final hex = bytes
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join();
   return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
 }

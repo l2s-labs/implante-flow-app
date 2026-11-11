@@ -49,3 +49,7 @@ app.*.map.json
 
 # Configuração local de compilação (--dart-define-from-file)
 /config/local.json
+/config/develop.json
+/config/prod.json
+*.jks
+/android/build/

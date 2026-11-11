@@ -30,6 +30,8 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>br.com.implateflow</string>
+				<string>com.l2slabs.implanteflow</string>
+				<string>com.l2slabs.implanteflow.dev</string>
 			</array>
 		</dict>
 	</array>

@@ -9,6 +9,7 @@ import '../data/services/api_feedback.dart';
 import '../data/services/clinic_pdfs.dart';
 import '../data/services/workos_auth.dart';
 import '../domain/certificate.dart';
+import '../domain/first_steps.dart';
 import '../domain/clinic_snapshot.dart';
 import '../data/services/cep_lookup.dart';
 import '../domain/models.dart';
@@ -17,14 +18,17 @@ import '../domain/queries.dart';
 
 class RepositoryViewModel extends ChangeNotifier {
   RepositoryViewModel(this.repository) {
-    _subscription = repository.watch().listen((next) {
-      snapshot = next;
-      loadError = null;
-      notifyListeners();
-    }, onError: (Object _) {
-      loadError = 'Não foi possível atualizar os relatórios.';
-      notifyListeners();
-    });
+    _subscription = repository.watch().listen(
+      (next) {
+        snapshot = next;
+        loadError = null;
+        notifyListeners();
+      },
+      onError: (Object _) {
+        loadError = 'Não foi possível atualizar os relatórios.';
+        notifyListeners();
+      },
+    );
     _syncErrors = repository.syncErrors.listen((message) {
       loadError = message;
       notifyListeners();
@@ -69,7 +73,7 @@ class SessionViewModel extends RepositoryViewModel {
       final identity = await auth.currentIdentity(clientId: workOsClientId);
       return identity?.accessToken;
     });
-    restored = syncWorkOsName();
+    restored = _restore();
   }
 
   final WorkOsAuth auth;
@@ -77,7 +81,52 @@ class SessionViewModel extends RepositoryViewModel {
   final String workOsRedirectUri;
   late final Future<void> restored;
   bool busy = false;
+  bool preparingSignIn = false;
   String? error;
+  bool routingReady = false;
+  bool firstStepsRequired = false;
+
+  Future<void> _restore() async {
+    try {
+      final current = repository.current;
+      if (current.signedIn && (current.patients.isNotEmpty || current.procedures.isNotEmpty ||
+          (firstStepsValidPhone(current.profile.phone) && firstStepsValidCro(current.profile.cro) &&
+              current.profile.locations.any((location) => location.active && location.isDefault)))) {
+        routingReady = true;
+        notifyListeners();
+      }
+      await syncWorkOsName();
+      if (!routingReady) _checkFirstSteps();
+    } finally {
+      routingReady = true;
+      notifyListeners();
+    }
+  }
+
+  void _checkFirstSteps() {
+    final current = repository.current;
+    final profile = current.profile;
+    firstStepsRequired =
+        current.signedIn && repository.hasFreshChart &&
+        current.patients.isEmpty &&
+        current.procedures.isEmpty &&
+        (!firstStepsValidPhone(profile.phone) ||
+            !firstStepsValidCro(profile.cro) ||
+            !profile.locations.any(
+              (location) => location.active && location.isDefault,
+            ));
+  }
+
+  Future<void> completeFirstSteps(DentistProfile profile) async {
+    await repository.completeFirstSteps(profile);
+    firstStepsRequired = false;
+    notifyListeners();
+  }
+
+  void skipFirstSteps() {
+    firstStepsRequired = false;
+    notifyListeners();
+  }
 
   /// Evita reabrir o AuthKit em loop após cancelamento/erro (F3S-517).
   bool _authKitPresented = false;
@@ -103,6 +152,7 @@ class SessionViewModel extends RepositoryViewModel {
       return;
     }
     busy = true;
+    preparingSignIn = true;
     error = null;
     notifyListeners();
     try {
@@ -115,11 +165,13 @@ class SessionViewModel extends RepositoryViewModel {
         email: identity.email,
         accessToken: identity.accessToken,
       );
-      await repository.refresh();
+      await repository.refreshForSignIn();
+      _checkFirstSteps();
     } on WorkOsAuthException catch (error) {
       this.error = error.message;
     } finally {
       busy = false;
+      preparingSignIn = false;
       notifyListeners();
     }
   }
@@ -139,7 +191,7 @@ class SessionViewModel extends RepositoryViewModel {
         email: identity.email,
         accessToken: identity.accessToken,
       );
-      await repository.refresh();
+      await repository.refreshForSignIn();
     } on WorkOsAuthException {
       // Rede/indisponibilidade: mantém o prontuário local até o próximo refresh.
     }
@@ -155,8 +207,10 @@ class SessionViewModel extends RepositoryViewModel {
     } on WorkOsAuthException {
       // The local session still ends so the dentist returns to login.
     } finally {
-      repository.signOut();
       busy = false;
+      _authKitPresented = false;
+      repository.signOut();
+      firstStepsRequired = false;
       notifyListeners();
     }
   }
@@ -172,27 +226,30 @@ class HomeViewModel extends RepositoryViewModel {
   DateTime get agendaToday => brasiliaToday();
 
   List<FollowUp> _scheduledOn(bool Function(DateTime day) test) {
-    return scheduledFollowUps(snapshot.procedures).where((item) => test(dateOnly(item.date))).toList();
+    return scheduledFollowUps(snapshot.procedures)
+        .where((item) => test(dateOnly(item.date)))
+        .toList();
   }
 
   List<FollowUp> get today => _scheduledOn((day) => sameDay(day, agendaToday));
 
-  List<FollowUp> get nextWeek => followUpsInNextDays(snapshot.procedures, agendaToday);
+  List<FollowUp> get nextWeek =>
+      followUpsInNextDays(snapshot.procedures, agendaToday);
 
   int get nextWeekCount => nextWeek.length;
 
   int get overduePatientCount => patientsForReport(
-        snapshot.procedures,
-        snapshot.patients,
-        ReportFilter.atrasados,
-        agendaToday,
-      ).length;
+    snapshot.procedures,
+    snapshot.patients,
+    ReportFilter.atrasados,
+    agendaToday,
+  ).length;
 
   List<FollowUp> get todayReminders => schedulingReminders(
-        procedures: snapshot.procedures,
-        day: agendaToday,
-        remindersEnabled: profile.reminderEnabled,
-      );
+    procedures: snapshot.procedures,
+    day: agendaToday,
+    remindersEnabled: profile.reminderEnabled,
+  );
 
   int get todayReminderCount => todayReminders.length;
 
@@ -202,8 +259,10 @@ class HomeViewModel extends RepositoryViewModel {
   Patient patientOf(String patientId) =>
       snapshot.patients.firstWhere((patient) => patient.id == patientId);
 
-  List<Patient> patientsMatching(String query, {LocationFilter location = const LocationFilter.all()}) =>
-      matchPatients(snapshot.patients, query, location: location);
+  List<Patient> patientsMatching(
+    String query, {
+    LocationFilter location = const LocationFilter.all(),
+  }) => matchPatients(snapshot.patients, query, location: location);
 }
 
 class PatientsViewModel extends RepositoryViewModel {
@@ -215,7 +274,8 @@ class PatientsViewModel extends RepositoryViewModel {
   List<Patient> get patients =>
       matchPatients(snapshot.patients, query, location: locationFilter);
 
-  int implantCount(String patientId) => implantsOf(snapshot.procedures, patientId).length;
+  int implantCount(String patientId) =>
+      implantsOf(snapshot.procedures, patientId).length;
 
   void setQuery(String value) {
     query = value;
@@ -286,7 +346,10 @@ class PatientViewModel extends RepositoryViewModel {
     );
   }
 
-  void updateInstalledImplant(InstalledImplant current, PreexistingImplantDraft draft) {
+  void updateInstalledImplant(
+    InstalledImplant current,
+    PreexistingImplantDraft draft,
+  ) {
     repository.updateInstalledImplant(
       current.copyWith(
         fdi: draft.fdi,
@@ -306,7 +369,8 @@ class PatientViewModel extends RepositoryViewModel {
   Procedure? procedureOf(String followUpId) =>
       procedureOfFollowUp(snapshot.procedures, followUpId);
 
-  List<({DateTime date, String title, String detail, String? procedureId})> get timeline {
+  List<({DateTime date, String title, String detail, String? procedureId})>
+  get timeline {
     return [
       for (final procedure in history) ...[
         (
@@ -340,7 +404,10 @@ class PatientViewModel extends RepositoryViewModel {
       patient: current,
       history: history,
     );
-    await Printing.sharePdf(bytes: bytes, filename: 'prontuario-${current.id}.pdf');
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'prontuario-${current.id}.pdf',
+    );
   }
 }
 
@@ -361,38 +428,41 @@ class ReportsViewModel extends RepositoryViewModel {
   DateTime get today => brasiliaToday();
 
   ReportWindow get window => ReportWindow.span(
-        today,
-        span,
-        customStart: customStart,
-        customEnd: customEnd,
-      );
+    today,
+    span,
+    customStart: customStart,
+    customEnd: customEnd,
+  );
 
   ClinicReport get totals => clinicReport(
-        procedures: snapshot.procedures,
-        patients: snapshot.patients,
-        today: today,
-        window: window,
-        modality: modality,
-        query: query,
-      );
+    procedures: snapshot.procedures,
+    patients: snapshot.patients,
+    today: today,
+    window: window,
+    modality: modality,
+    query: query,
+  );
 
   String get attendanceLabel {
     final percent = totals.attendancePercent;
-    final rate = percent == null ? 'Comparecimento indisponível' : 'Comparecimento $percent%';
+    final rate = percent == null
+        ? 'Comparecimento indisponível'
+        : 'Comparecimento $percent%';
     return '$rate · ${totals.withOutcome} com desfecho · ${totals.pending} sem desfecho';
   }
 
   List<Patient> get patients => patientsForReport(
-        snapshot.procedures,
-        snapshot.patients,
-        filter,
-        today,
-        window: window,
-        modality: modality,
-        query: query,
-      );
+    snapshot.procedures,
+    snapshot.patients,
+    filter,
+    today,
+    window: window,
+    modality: modality,
+    query: query,
+  );
 
-  List<({Procedure procedure, FollowUp followUp})> rowsFor(String patientId) => reportFollowUps(
+  List<({Procedure procedure, FollowUp followUp})> rowsFor(String patientId) =>
+      reportFollowUps(
         snapshot.procedures,
         patientId,
         filter,
@@ -401,23 +471,31 @@ class ReportsViewModel extends RepositoryViewModel {
         modality: modality,
       );
 
-  List<({Patient patient, Procedure procedure, FollowUp followUp})> get appointments {
-    final rows = [
-      for (final patient in patients)
-        for (final row in rowsFor(patient.id))
-          (patient: patient, procedure: row.procedure, followUp: row.followUp),
-    ]..sort((a, b) {
-        final byDate = a.followUp.date.compareTo(b.followUp.date);
-        if (byDate != 0) return byDate;
-        return a.patient.name.toLowerCase().compareTo(b.patient.name.toLowerCase());
-      });
+  List<({Patient patient, Procedure procedure, FollowUp followUp})>
+  get appointments {
+    final rows =
+        [
+          for (final patient in patients)
+            for (final row in rowsFor(patient.id))
+              (
+                patient: patient,
+                procedure: row.procedure,
+                followUp: row.followUp,
+              ),
+        ]..sort((a, b) {
+          final byDate = a.followUp.date.compareTo(b.followUp.date);
+          if (byDate != 0) return byDate;
+          return a.patient.name.toLowerCase().compareTo(
+            b.patient.name.toLowerCase(),
+          );
+        });
     return rows;
   }
 
   List<Patient> get visiblePatients => patients.take(visibleLimit).toList();
 
-  List<({Patient patient, Procedure procedure, FollowUp followUp})> get visibleAppointments =>
-      appointments.take(visibleLimit).toList();
+  List<({Patient patient, Procedure procedure, FollowUp followUp})>
+  get visibleAppointments => appointments.take(visibleLimit).toList();
 
   bool get hasMore =>
       (byAppointment ? appointments.length : patients.length) > visibleLimit;
@@ -495,7 +573,8 @@ class ReportsViewModel extends RepositoryViewModel {
 class NextWeekViewModel extends RepositoryViewModel {
   NextWeekViewModel(super.repository);
 
-  List<FollowUp> get followUps => followUpsInNextDays(snapshot.procedures, brasiliaToday());
+  List<FollowUp> get followUps =>
+      followUpsInNextDays(snapshot.procedures, brasiliaToday());
 
   Procedure? procedureOf(String followUpId) =>
       procedureOfFollowUp(snapshot.procedures, followUpId);
@@ -508,10 +587,10 @@ class TodayRemindersViewModel extends RepositoryViewModel {
   TodayRemindersViewModel(super.repository);
 
   List<FollowUp> get reminders => schedulingReminders(
-        procedures: snapshot.procedures,
-        day: brasiliaToday(),
-        remindersEnabled: snapshot.profile.reminderEnabled,
-      );
+    procedures: snapshot.procedures,
+    day: brasiliaToday(),
+    remindersEnabled: snapshot.profile.reminderEnabled,
+  );
 
   Procedure? procedureOf(String followUpId) =>
       procedureOfFollowUp(snapshot.procedures, followUpId);
@@ -572,13 +651,19 @@ class ProcedureViewModel extends RepositoryViewModel {
   Patient? get patient {
     final current = procedure;
     if (current == null) return null;
-    return snapshot.patients.where((item) => item.id == current.patientId).firstOrNull;
+    return snapshot.patients
+        .where((item) => item.id == current.patientId)
+        .firstOrNull;
   }
 
   void addPhoto(ClinicPhoto photo) => repository.addPhoto(procedureId, photo);
 
   void addVisit({required String note, required String statusLabel}) {
-    repository.addVisit(procedureId: procedureId, note: note, statusLabel: statusLabel);
+    repository.addVisit(
+      procedureId: procedureId,
+      note: note,
+      statusLabel: statusLabel,
+    );
   }
 
   void completeFollowUp({
@@ -611,7 +696,6 @@ class ProcedureViewModel extends RepositoryViewModel {
     repository.addProsthesisFollowUp(procedureId: procedureId, phase: phase);
   }
 
-
   void saveNotes(String notes) {
     final current = procedure;
     if (current == null) return;
@@ -622,8 +706,10 @@ class ProcedureViewModel extends RepositoryViewModel {
     return repository.deleteProcedure(procedureId);
   }
 
-  void reprocessNotice(String noticeId) =>
-      repository.reprocessStageNotice(procedureId: procedureId, noticeId: noticeId);
+  void reprocessNotice(String noticeId) => repository.reprocessStageNotice(
+    procedureId: procedureId,
+    noticeId: noticeId,
+  );
 
   void saveTraceability({
     required List<ToothSite> sites,
@@ -657,7 +743,9 @@ class CertificateViewModel extends RepositoryViewModel {
   Patient? get patient {
     final current = procedure;
     if (current == null) return null;
-    return snapshot.patients.where((item) => item.id == current.patientId).firstOrNull;
+    return snapshot.patients
+        .where((item) => item.id == current.patientId)
+        .firstOrNull;
   }
 
   DentistProfile get profile => snapshot.profile;
@@ -669,9 +757,9 @@ class CertificateViewModel extends RepositoryViewModel {
   }
 
   CareLocation? get selectedLocation => resolveCertificateLocation(
-        candidates: careLocations,
-        selectedLocationId: selectedLocationId,
-      );
+    candidates: careLocations,
+    selectedLocationId: selectedLocationId,
+  );
 
   void setEmitTwoCopies(bool value) {
     emitTwoCopies = value;
@@ -694,7 +782,10 @@ class CertificateViewModel extends RepositoryViewModel {
       locationId: location.id,
     );
     if (bytes.isEmpty) return;
-    await Printing.sharePdf(bytes: bytes, filename: 'certificado-${currentProcedure.id}.pdf');
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'certificado-${currentProcedure.id}.pdf',
+    );
   }
 }
 
@@ -704,7 +795,6 @@ class ProfileViewModel extends RepositoryViewModel {
   DentistProfile get profile => snapshot.profile;
 
   Future<CepAddress> lookupCep(String cep) => repository.lookupCep(cep);
-
 
   void setName(String value) {
     final cleaned = sanitizePersonName(value);
@@ -719,7 +809,8 @@ class ProfileViewModel extends RepositoryViewModel {
     repository.updateProfile(profile.copyWith(phone: digits));
   }
 
-  void setCro(String value) => repository.updateProfile(profile.copyWith(cro: value));
+  void setCro(String value) =>
+      repository.updateProfile(profile.copyWith(cro: value));
 
   void addLocation({required String name, String address = ''}) {
     final trimmed = name.trim();
@@ -728,13 +819,21 @@ class ProfileViewModel extends RepositoryViewModel {
       profile.copyWith(
         locations: addCareLocation(
           profile.locations,
-          CareLocation(id: repository.allocateId('loc'), name: trimmed, address: address.trim()),
+          CareLocation(
+            id: repository.allocateId('loc'),
+            name: trimmed,
+            address: address.trim(),
+          ),
         ),
       ),
     );
   }
 
-  void editLocation({required String id, required String name, String address = ''}) {
+  void editLocation({
+    required String id,
+    required String name,
+    String address = '',
+  }) {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
     final current = profile.locations.where((location) => location.id == id);
@@ -751,21 +850,29 @@ class ProfileViewModel extends RepositoryViewModel {
 
   void makeDefaultLocation(String id) {
     repository.updateProfile(
-      profile.copyWith(locations: setDefaultCareLocation(profile.locations, id)),
+      profile.copyWith(
+        locations: setDefaultCareLocation(profile.locations, id),
+      ),
     );
   }
 
   void inactivateLocation(String id, {String? replacementId}) {
     repository.updateProfile(
       profile.copyWith(
-        locations: inactivateCareLocation(profile.locations, id, replacementId: replacementId),
+        locations: inactivateCareLocation(
+          profile.locations,
+          id,
+          replacementId: replacementId,
+        ),
       ),
     );
   }
 
   void reactivateLocation(String id) {
     repository.updateProfile(
-      profile.copyWith(locations: reactivateCareLocation(profile.locations, id)),
+      profile.copyWith(
+        locations: reactivateCareLocation(profile.locations, id),
+      ),
     );
   }
 
@@ -773,10 +880,12 @@ class ProfileViewModel extends RepositoryViewModel {
       repository.updateProfile(profile.copyWith(reminderEnabled: value));
 
   void setReminderDaysBefore(int value) => repository.updateProfile(
-        profile.copyWith(reminderDaysBefore: normalizeReminderDaysBefore(value)),
-      );
+    profile.copyWith(reminderDaysBefore: normalizeReminderDaysBefore(value)),
+  );
 
-  void setEmailChannel(bool value) => repository.updateProfile(profile.copyWith(emailChannel: value));
+  void setEmailChannel(bool value) =>
+      repository.updateProfile(profile.copyWith(emailChannel: value));
 
-  void setPushChannel(bool value) => repository.updateProfile(profile.copyWith(pushChannel: value));
+  void setPushChannel(bool value) =>
+      repository.updateProfile(profile.copyWith(pushChannel: value));
 }

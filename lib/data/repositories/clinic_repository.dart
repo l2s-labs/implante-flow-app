@@ -24,11 +24,19 @@ abstract class ClinicRepository {
 
   void bindCatalog(void Function(ClinicalCatalog catalog) apply) {}
 
-  void signIn({required String name, required String email, String accessToken = ''});
+  void signIn({
+    required String name,
+    required String email,
+    String accessToken = '',
+  });
 
   void signOut();
 
   Future<void> refresh() async {}
+
+  Future<void> refreshForSignIn() => refresh();
+
+  bool get hasFreshChart => true;
 
   /// Atualiza fabricantes/modelos/tamanhos (e enxertos) a partir da API.
   Future<void> refreshCatalog() async {}
@@ -92,11 +100,21 @@ abstract class ClinicRepository {
     String? locationId,
   });
 
-  void reprocessStageNotice({required String procedureId, required String noticeId});
+  void reprocessStageNotice({
+    required String procedureId,
+    required String noticeId,
+  });
 
   void failStageNotice({required String procedureId, required String noticeId});
 
   void updateProfile(DentistProfile profile);
+
+  Future<void> saveProfileIdentity({required String name, required String phone, required String cro});
+
+  /// Persiste os dados iniciais antes de liberar a conclusão do fluxo.
+  Future<void> completeFirstSteps(DentistProfile profile) async {
+    updateProfile(profile);
+  }
 
   InstalledImplant createInstalledImplant(InstalledImplant implant);
 

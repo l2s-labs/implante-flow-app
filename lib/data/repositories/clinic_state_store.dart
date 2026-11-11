@@ -11,6 +11,18 @@ import 'clinic_repository.dart';
 
 /// Estado mutável do prontuário em memória (cache local + persistência opcional).
 class ClinicStateStore implements ClinicRepository {
+  @override
+  Future<void> saveProfileIdentity({required String name, required String phone, required String cro}) async {
+    updateProfile(current.profile.copyWith(name: name, phone: phone, cro: cro));
+  }
+  @override
+  bool get hasFreshChart => true;
+
+  @override
+  Future<void> completeFirstSteps(DentistProfile profile) async {
+    updateProfile(profile);
+  }
+
   ClinicStateStore.fromSnapshot(
     this._snapshot, {
     this._persist,
@@ -59,6 +71,9 @@ class ClinicStateStore implements ClinicRepository {
 
   @override
   Future<void> refresh() async {}
+
+  @override
+  Future<void> refreshForSignIn() => refresh();
 
   @override
   Future<void> refreshCatalog() async {}

@@ -6,7 +6,9 @@ import '../../data/services/clinic_api.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/app_sheet.dart';
-import '../core/brazilian_phone_field.dart';
+import '../core/cro_field.dart';
+import 'profile_identity_sheet.dart';
+import 'package:go_router/go_router.dart';
 import '../core/layout.dart';
 import '../view_models.dart';
 
@@ -20,31 +22,30 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final _croFocus = FocusNode();
-  final _croKey = GlobalKey();
-
   @override
   void initState() {
     super.initState();
     if (widget.focusField == 'cro') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final target = _croKey.currentContext;
-        if (target != null) {
-          Scrollable.ensureVisible(
-            target,
-            duration: const Duration(milliseconds: 250),
-            alignment: 0.1,
-          );
-        }
-        _croFocus.requestFocus();
+        if (mounted) _editIdentity();
       });
     }
   }
 
-  @override
-  void dispose() {
-    _croFocus.dispose();
-    super.dispose();
+  Future<void> _editIdentity() async {
+    final viewModel = context.read<ProfileViewModel>();
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: false,
+      enableDrag: false,
+      showDragHandle: true,
+      builder: (_) => ProfileIdentitySheet(viewModel: viewModel, focusCro: widget.focusField == 'cro'),
+    );
+    if (saved == true && mounted && widget.focusField == 'cro' && context.canPop()) {
+      context.pop();
+    }
   }
 
   @override
@@ -53,7 +54,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final session = context.watch<SessionViewModel>();
     final profile = viewModel.profile;
     final scheme = Theme.of(context).colorScheme;
-    final highlightCro = widget.focusField == 'cro';
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
       body: ListView(
@@ -71,29 +71,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 4),
                 Text(profile.email, style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: sanitizePersonName(profile.name),
-                  decoration: const InputDecoration(
-                    labelText: 'Nome',
-                    hintText: 'Nome não informado',
-                  ),
-                  textCapitalization: TextCapitalization.words,
-                  onChanged: viewModel.setName,
-                ),
-                const SizedBox(height: 12),
-                BrazilianPhoneField(initial: profile.phone, onChanged: viewModel.setPhone),
-                const SizedBox(height: 12),
-                TextFormField(
-                  key: _croKey,
-                  focusNode: _croFocus,
-                  initialValue: profile.cro,
-                  decoration: InputDecoration(
-                    labelText: 'CRO/UF',
-                    hintText: 'SP 12345',
-                    helperText: highlightCro ? 'Necessário para emitir certificado' : null,
-                  ),
-                  onChanged: viewModel.setCro,
-                ),
+                Row(children: [
+                  Expanded(child: Text('Dados profissionais', style: Theme.of(context).textTheme.titleSmall)),
+                  TextButton.icon(onPressed: _editIdentity, icon: const Icon(Icons.edit_outlined), label: const Text('Editar')),
+                ]),
+                Text('Telefone: ${profile.phone.isEmpty ? 'Não informado' : formatBrazilianPhone(profile.phone)}'),
+                const SizedBox(height: 8),
+                Text('CRO: ${profile.cro.isEmpty ? 'Não informado' : formatCroInput(profile.cro)}'),
               ],
             ),
           ),
