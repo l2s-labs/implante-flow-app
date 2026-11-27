@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../domain/models.dart';
 
@@ -201,7 +202,18 @@ class _FilteringPresetDropdownState extends State<_FilteringPresetDropdown> {
     super.dispose();
   }
 
-  void _onQueryChanged() => setState(() {});
+  void _onQueryChanged() {
+    // O DropdownMenu ajusta o controller no initState (durante o build do
+    // LayoutBuilder); nesse caso o setState precisa esperar o fim do frame.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks || phase == SchedulerPhase.transientCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {

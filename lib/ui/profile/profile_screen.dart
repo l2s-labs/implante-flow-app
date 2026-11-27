@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/services/cep_lookup.dart';
 import '../../data/services/clinic_api.dart';
+import '../../domain/certificate.dart';
 import '../../domain/models.dart';
 import '../../domain/practice.dart';
 import '../core/app_sheet.dart';
@@ -92,6 +93,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     hintText: 'SP 12345',
                     helperText: highlightCro ? 'Necessário para emitir certificado' : null,
                   ),
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty || normalizeCro(text) != null) return null;
+                    return 'Use o formato UF 00000, por exemplo SP 12345.';
+                  },
                   onChanged: viewModel.setCro,
                 ),
               ],

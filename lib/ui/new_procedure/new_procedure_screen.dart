@@ -20,15 +20,47 @@ class NewProcedureScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewModel = context.watch<NewProcedureViewModel>();
     final titles = ['Modalidade', 'Boca', 'Resumo'];
-    return Scaffold(
-      appBar: AppBar(title: Text(titles[viewModel.step])),
-      body: switch (viewModel.step) {
-        0 => _ModalityStep(viewModel: viewModel),
-        1 => _MouthStep(viewModel: viewModel),
-        _ => _SummaryStep(viewModel: viewModel),
+    // Voltar (sistema ou seta) recua uma etapa; só sai da tela na primeira e,
+    // se já houver dados preenchidos, depois de confirmar o descarte.
+    return PopScope(
+      canPop: viewModel.step == 0 && !viewModel.hasDraftProgress,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        switch (viewModel.step) {
+          case 2:
+            viewModel.backToMouth();
+          case 1:
+            viewModel.backToModality();
+          default:
+            final discard = await _confirmLeave(context);
+            if (discard && context.mounted) context.pop();
+        }
       },
+      child: Scaffold(
+        appBar: AppBar(title: Text(titles[viewModel.step])),
+        body: switch (viewModel.step) {
+          0 => _ModalityStep(viewModel: viewModel),
+          1 => _MouthStep(viewModel: viewModel),
+          _ => _SummaryStep(viewModel: viewModel),
+        },
+      ),
     );
   }
+}
+
+Future<bool> _confirmLeave(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Descartar procedimento?'),
+      content: const Text('Dentes e dados já preenchidos serão perdidos.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Continuar editando')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Descartar')),
+      ],
+    ),
+  );
+  return ok ?? false;
 }
 
 class _ModalityStep extends StatelessWidget {

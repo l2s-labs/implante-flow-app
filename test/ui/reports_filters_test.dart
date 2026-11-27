@@ -10,7 +10,7 @@ import 'package:provider/provider.dart';
 
 void main() {
   testWidgets('filtros abrem no ícone, recortam a lista e limpam', (tester) async {
-    final today = DateTime(2026, 10, 19);
+    final today = brasiliaToday();
     final ana = Patient(id: 'ana', name: 'Ana Costa', phone: '', birthDate: DateTime(1984, 1, 28));
     final bruno = Patient(id: 'bruno', name: 'Bruno Dias', phone: '', birthDate: DateTime(1970, 2, 2));
     final repository = MockClinicRepository.fromSnapshot(
@@ -47,7 +47,7 @@ void main() {
             followUps: [
               FollowUp(
                 id: 'depois',
-                date: DateTime(2026, 10, 30),
+                date: today.add(const Duration(days: 11)),
                 reason: ReturnReason.controle,
                 status: ReturnStatus.agendado,
                 reminderEnabled: false,

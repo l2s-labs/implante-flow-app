@@ -719,7 +719,12 @@ class ProfileViewModel extends RepositoryViewModel {
     repository.updateProfile(profile.copyWith(phone: digits));
   }
 
-  void setCro(String value) => repository.updateProfile(profile.copyWith(cro: value));
+  void setCro(String value) {
+    // Como no telefone, valor fora do formato UF 00000 não é gravado (o campo
+    // mostra o aviso); vazio continua válido para limpar o CRO.
+    if (value.trim().isNotEmpty && normalizeCro(value) == null) return;
+    repository.updateProfile(profile.copyWith(cro: value));
+  }
 
   void addLocation({required String name, String address = ''}) {
     final trimmed = name.trim();
